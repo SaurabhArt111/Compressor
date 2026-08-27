@@ -1,0 +1,21 @@
+node_modules/
+dist/
+build/
+
+# Runtime data created by the server
+server/uploads/
+server/data/history.json
+
+# Env
+.env
+.env.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+npm-debug.log*
+*.log

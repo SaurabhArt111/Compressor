@@ -1,0 +1,22 @@
+{
+  "name": "image-compressor",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local-first batch image compressor (React + Vite frontend, Node/Express + Sharp backend).",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n SERVER,CLIENT -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client",
+    "start": "npm run start -w server",
+    "lint": "npm run lint -w client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

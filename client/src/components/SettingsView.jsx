@@ -1,0 +1,154 @@
+import { useState } from 'react';
+import { RotateCcw } from 'lucide-react';
+import { useSettings } from '../context/SettingsContext';
+
+function Toggle({ on, onChange, label }) {
+  return (
+    <div className="toggle-row">
+      <div>
+        <div className="settings-field-label">{label}</div>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        className={`toggle${on ? ' on' : ''}`}
+        onClick={() => onChange(!on)}
+      >
+        <span className="knob" />
+      </button>
+    </div>
+  );
+}
+
+export default function SettingsView() {
+  const { settings, updateSettings, resetSettings } = useSettings();
+  const [confirmingReset, setConfirmingReset] = useState(false);
+
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <div className="panel">
+        <div className="panel-title">Defaults for new jobs</div>
+
+        <div className="settings-field">
+          <span className="settings-field-label">Default target size</span>
+          <div className="segmented" style={{ width: 'fit-content' }}>
+            <button type="button" className={settings.targetPreset === '10' ? 'active' : ''} onClick={() => updateSettings({ targetPreset: '10' })}>10 MB</button>
+            <button type="button" className={settings.targetPreset === '12' ? 'active' : ''} onClick={() => updateSettings({ targetPreset: '12' })}>12 MB</button>
+            <button type="button" className={settings.targetPreset === 'custom' ? 'active' : ''} onClick={() => updateSettings({ targetPreset: 'custom' })}>Custom</button>
+          </div>
+          {settings.targetPreset === 'custom' && (
+            <div className="custom-size-input" style={{ width: 'fit-content', marginTop: 4 }}>
+              <input
+                type="number"
+                min="0.1"
+                step="0.5"
+                value={settings.customTargetMB}
+                onChange={(e) => updateSettings({ customTargetMB: e.target.value })}
+              />
+              <span>MB</span>
+            </div>
+          )}
+        </div>
+
+        <div className="settings-field">
+          <span className="settings-field-label">Default output format</span>
+          <select
+            className="select-input"
+            style={{ width: 'fit-content' }}
+            value={settings.format}
+            onChange={(e) => updateSettings({ format: e.target.value })}
+          >
+            <option value="auto">Auto (recommended)</option>
+            <option value="jpeg">JPEG</option>
+            <option value="webp">WebP</option>
+            <option value="avif">AVIF</option>
+            <option value="png">PNG</option>
+          </select>
+          <span className="settings-field-hint">
+            Auto picks WebP or AVIF for photos and WebP for images that need transparency, favoring AVIF only on
+            smaller images where its much slower encoder is still fast enough for a responsive compression search.
+          </span>
+        </div>
+
+        <div className="settings-field">
+          <span className="settings-field-label">Default concurrency</span>
+          <div className="range-row" style={{ maxWidth: 280 }}>
+            <input
+              type="range"
+              min="1"
+              max="6"
+              value={settings.concurrency}
+              onChange={(e) => updateSettings({ concurrency: Number(e.target.value) })}
+            />
+            <span className="range-value mono">{settings.concurrency}</span>
+          </div>
+          <span className="settings-field-hint">
+            How many images are compressed in parallel. Lower this if you're processing very large (300MB+) files on a
+            machine with limited RAM; the server also enforces its own hard ceiling regardless of this value.
+          </span>
+        </div>
+
+        <Toggle
+          label="Auto-download ZIP when a batch finishes"
+          on={settings.autoDownloadZip}
+          onChange={(v) => updateSettings({ autoDownloadZip: v })}
+        />
+      </div>
+
+      <div className="panel" style={{ marginTop: 18 }}>
+        <div className="panel-title">Advanced: quality search bounds</div>
+        <div className="settings-field">
+          <span className="settings-field-label">Minimum quality (floor)</span>
+          <div className="range-row" style={{ maxWidth: 280 }}>
+            <input
+              type="range"
+              min="1"
+              max="80"
+              value={settings.qualityFloor}
+              onChange={(e) => updateSettings({ qualityFloor: Number(e.target.value) })}
+            />
+            <span className="range-value mono">{settings.qualityFloor}</span>
+          </div>
+          <span className="settings-field-hint">
+            The engine won't drop quality below this while searching for the target size — it will reduce resolution
+            instead. Lower it to allow more aggressive compression at the cost of visible quality loss.
+          </span>
+        </div>
+        <div className="settings-field">
+          <span className="settings-field-label">Maximum quality (ceiling)</span>
+          <div className="range-row" style={{ maxWidth: 280 }}>
+            <input
+              type="range"
+              min={settings.qualityFloor + 1}
+              max="100"
+              value={settings.qualityCeiling}
+              onChange={(e) => updateSettings({ qualityCeiling: Number(e.target.value) })}
+            />
+            <span className="range-value mono">{settings.qualityCeiling}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        {confirmingReset ? (
+          <div className="banner banner-warn">
+            Reset all settings to their defaults?
+            <button type="button" className="btn btn-sm" onClick={() => setConfirmingReset(false)}>Cancel</button>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={() => { resetSettings(); setConfirmingReset(false); }}
+            >
+              Reset
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirmingReset(true)}>
+            <RotateCcw size={13} /> Reset to defaults
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
