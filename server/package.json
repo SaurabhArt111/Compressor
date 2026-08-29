@@ -7,16 +7,25 @@
   "scripts": {
     "dev": "nodemon --watch src src/index.js",
     "start": "node src/index.js",
-    "test": "node src/services/__test__/compressionEngine.test.js"
+    "test": "npm run test:engine && npm run test:pdf && npm run test:zip && npm run test:api",
+    "test:engine": "node src/services/__test__/compressionEngine.test.js",
+    "test:pdf": "node src/services/__test__/pdfCompressionEngine.test.js",
+    "test:zip": "node src/services/__test__/zipExtractor.test.js",
+    "test:api": "node src/__test__/api.test.mjs"
   },
   "dependencies": {
     "archiver": "^7.0.1",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^4.21.0",
+    "helmet": "^8.3.0",
     "multer": "^2.2.0",
     "nanoid": "^5.0.7",
+    "pdf-lib": "^1.17.1",
     "sharp": "^0.35.3",
-    "socket.io": "^4.7.5"
+    "socket.io": "^4.7.5",
+    "unzipper": "^0.12.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"

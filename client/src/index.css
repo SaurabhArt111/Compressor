@@ -840,8 +840,13 @@ button {
 }
 
 @keyframes skeleton-shimmer {
-  from { background-position: 120% 0; }
-  to { background-position: -100% 0; }
+  from {
+    background-position: 120% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
 }
 
 .processing-indicator {
@@ -867,7 +872,9 @@ button {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .processing-details {
@@ -894,8 +901,13 @@ button {
   border-radius: 4px;
 }
 
-.skeleton-line-wide { width: 72%; }
-.skeleton-line-short { width: 44%; }
+.skeleton-line-wide {
+  width: 72%;
+}
+
+.skeleton-line-short {
+  width: 44%;
+}
 
 .result-body {
   padding: 14px 16px 16px;
@@ -1087,12 +1099,13 @@ button {
   font-size: 10.5px;
   text-transform: uppercase;
 
-.history-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
+  .history-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
   letter-spacing: 0.06em;
   color: var(--text-tertiary);
   font-weight: 600;
@@ -1253,8 +1266,150 @@ button {
   border: 1px solid rgba(242, 169, 78, 0.3);
 }
 
+.banner-success {
+  background: var(--success-wash);
+  color: var(--success);
+  border: 1px solid rgba(90, 180, 130, 0.3);
+}
+
 .banner button {
   margin-left: auto;
+}
+
+/* =========================================================================
+   PDF PREVIEW (result card, in place of the before/after image slider)
+   ========================================================================= */
+
+.pdf-preview {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+  background: var(--bg);
+}
+
+.pdf-preview-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* =========================================================================
+   ZIP QUEUE ROW (upload queue, archive-to-be-unzipped)
+   ========================================================================= */
+
+.queue-row.zip-row .file-icon {
+  color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.queue-row.zip-row .file-path {
+  color: var(--accent);
+}
+
+/* =========================================================================
+   FILE MANAGER (uploads tree browser)
+   ========================================================================= */
+
+.tree-panel {
+  max-height: 620px;
+  overflow-y: auto;
+}
+
+.tree-node {
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tree-panel>.tree-node:last-child>.tree-row {
+  border-bottom: none;
+}
+
+.tree-row.locked {
+  background: var(--surface-2);
+}
+
+.tree-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.tree-row-main:disabled {
+  cursor: default;
+}
+
+.tree-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.tree-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.tree-name {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-badge {
+  flex-shrink: 0;
+}
+
+.tree-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+}
+
+.tree-count {
+  white-space: nowrap;
+}
+
+.tree-size {
+  min-width: 56px;
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+.tree-date {
+  white-space: nowrap;
+  min-width: 96px;
+  text-align: right;
 }
 
 /* =========================================================================

@@ -1,10 +1,30 @@
-export const ALLOWED_EXTENSIONS = new Set([
+export const IMAGE_EXTENSIONS = new Set([
   'jpg', 'jpeg', 'png', 'webp', 'tif', 'tiff', 'gif', 'bmp', 'avif', 'heic', 'heif',
 ]);
+export const PDF_EXTENSIONS = new Set(['pdf']);
+export const ZIP_EXTENSIONS = new Set(['zip']);
+
+// Everything the compression engines can actually shrink.
+export const ALLOWED_EXTENSIONS = new Set([...IMAGE_EXTENSIONS, ...PDF_EXTENSIONS]);
+// Everything the dropzone/file picker will accept, including archives -
+// a .zip isn't itself compressed, but the server unpacks it and queues
+// whatever supported files it finds inside.
+export const UPLOAD_EXTENSIONS = new Set([...ALLOWED_EXTENSIONS, ...ZIP_EXTENSIONS]);
+
+function extOf(name) {
+  return name.split('.').pop()?.toLowerCase() || '';
+}
 
 export function isSupportedFile(name) {
-  const ext = name.split('.').pop()?.toLowerCase();
-  return !!ext && ALLOWED_EXTENSIONS.has(ext);
+  return UPLOAD_EXTENSIONS.has(extOf(name));
+}
+
+export function isZipFile(name) {
+  return ZIP_EXTENSIONS.has(extOf(name));
+}
+
+export function isPdfFile(name) {
+  return PDF_EXTENSIONS.has(extOf(name));
 }
 
 /**

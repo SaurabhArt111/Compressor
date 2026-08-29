@@ -8,6 +8,7 @@ import ProgressSummary from './components/ProgressSummary';
 import ResultsGrid from './components/ResultsGrid';
 import HistoryView from './components/HistoryView';
 import SettingsView from './components/SettingsView';
+import FileManagerView from './components/FileManagerView';
 import { useSettings } from './context/SettingsContext';
 import { useJobSocket } from './hooks/useSocket';
 import { uploadFiles, startCompression, cancelJob, downloadZipUrl, fetchJob } from './utils/api';
@@ -168,9 +169,9 @@ export default function App() {
         <div className="topbar">
           <div>
             <h1>Compressor</h1>
-            <div className="subtitle">Batch-shrink large images to a target file size, without leaving your machine.</div>
+            <div className="subtitle">Batch-shrink images and PDFs to a target file size, on your own server.</div>
           </div>
-          <span className="privacy-chip"><ShieldCheck size={13} /> Processed locally — never uploaded to the cloud</span>
+          <span className="privacy-chip"><ShieldCheck size={13} /> Self-hosted — your files stay on your own server</span>
         </div>
 
         <div className="view-container">
@@ -190,7 +191,7 @@ export default function App() {
                   {queuedItems.length > 0 && (
                     <>
                       <div className="section-header">
-                        <h3>Queued images</h3>
+                        <h3>Queued files</h3>
                         <span className="meta">{queuedItems.length} files · {formatBytes(totalQueuedBytes)}</span>
                       </div>
                       <FileQueueList items={queuedItems} onRemove={handleRemove} disabled={uploading} />
@@ -252,6 +253,7 @@ export default function App() {
             </>
           )}
 
+          {view === 'files' && <FileManagerView />}
           {view === 'history' && <HistoryView />}
           {view === 'settings' && <SettingsView />}
         </div>

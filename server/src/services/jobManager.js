@@ -2,9 +2,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { nanoid } from 'nanoid';
 import { compressImage, CancelledError, FORMAT_EXTENSION } from './compressionEngine.js';
+import { compressPdf } from './pdfCompressionEngine.js';
 import { createLimiter } from './concurrency.js';
 import { appendHistoryRecord } from './historyStore.js';
-import { UPLOAD_ROOT, MAX_SERVER_CONCURRENCY, DEFAULT_CONCURRENCY } from '../config.js';
+import {
+  UPLOAD_ROOT, MAX_SERVER_CONCURRENCY, DEFAULT_CONCURRENCY, PDF_EXTENSIONS,
+} from '../config.js';
 
 /** @type {Map<string, any>} */
 const jobs = new Map();
@@ -44,6 +47,11 @@ export function isJobActive(jobId) {
   return !!job && (job.status === 'uploading' || job.status === 'processing');
 }
 
+function fileKind(originalName) {
+  const ext = path.extname(originalName).replace('.', '').toLowerCase();
+  return PDF_EXTENSIONS.has(ext) ? 'pdf' : 'image';
+}
+
 export function addFileToJob(job, { originalName, relativePath, originalPath, size }) {
   const fileId = nanoid(10);
   const entry = {
@@ -52,6 +60,7 @@ export function addFileToJob(job, { originalName, relativePath, originalPath, si
     relativePath,
     originalPath,
     originalSize: size,
+    kind: fileKind(originalName),
     status: 'pending',
     progress: { percent: 0, stage: 'queued' },
     result: null,
@@ -69,6 +78,7 @@ function publicFile(entry) {
     originalName: entry.originalName,
     relativePath: entry.relativePath,
     originalSize: entry.originalSize,
+    kind: entry.kind,
     status: entry.status,
     progress: entry.progress,
     error: entry.error,
@@ -97,6 +107,17 @@ function computeOutputRelativePath(relativePath, format) {
   return dir === '.' ? withExt : path.posix.join(dir, withExt);
 }
 
+function makeProgressReporter(job, entry) {
+  return (scale, iteration, totalIterations, step = 0, totalSteps = 1) => {
+    const stepShare = 100 / Math.max(1, totalSteps);
+    const withinStep = (iteration / Math.max(1, totalIterations)) * stepShare;
+    const percent = Math.min(98, Math.round(step * stepShare + withinStep));
+    const stage = scale < 1 ? `optimizing at ${Math.round(scale * 100)}% size` : 'optimizing quality';
+    entry.progress = { percent, stage };
+    emit(job.id, 'file:progress', { fileId: entry.id, percent, stage });
+  };
+}
+
 async function processFile(job, entry, settings) {
   if (job.cancelled) {
     entry.status = 'cancelled';
@@ -105,28 +126,32 @@ async function processFile(job, entry, settings) {
   }
 
   entry.status = 'processing';
-  entry.progress = { percent: 1, stage: 'reading image' };
+  entry.progress = { percent: 1, stage: entry.kind === 'pdf' ? 'reading document' : 'reading image' };
   emit(job.id, 'file:start', { fileId: entry.id });
 
   try {
-    const result = await compressImage({
-      filePath: entry.originalPath,
-      targetBytes: settings.targetBytes,
-      formatPref: settings.format,
-      qualityFloor: settings.qualityFloor,
-      qualityCeiling: settings.qualityCeiling,
-      isCancelled: () => job.cancelled,
-      onProgress: (scale, iteration, totalIterations, step = 0, totalSteps = 1) => {
-        const stepShare = 100 / Math.max(1, totalSteps);
-        const withinStep = (iteration / Math.max(1, totalIterations)) * stepShare;
-        const percent = Math.min(98, Math.round(step * stepShare + withinStep));
-        const stage = scale < 1 ? `optimizing at ${Math.round(scale * 100)}% size` : 'optimizing quality';
-        entry.progress = { percent, stage };
-        emit(job.id, 'file:progress', { fileId: entry.id, percent, stage });
-      },
-    });
+    const result = entry.kind === 'pdf'
+      ? await compressPdf({
+        filePath: entry.originalPath,
+        targetBytes: settings.targetBytes,
+        qualityFloor: settings.qualityFloor,
+        qualityCeiling: settings.qualityCeiling,
+        isCancelled: () => job.cancelled,
+        onProgress: makeProgressReporter(job, entry),
+      })
+      : await compressImage({
+        filePath: entry.originalPath,
+        targetBytes: settings.targetBytes,
+        formatPref: settings.format,
+        qualityFloor: settings.qualityFloor,
+        qualityCeiling: settings.qualityCeiling,
+        isCancelled: () => job.cancelled,
+        onProgress: makeProgressReporter(job, entry),
+      });
 
-    const outRelativePath = computeOutputRelativePath(entry.relativePath, result.format);
+    const outRelativePath = result.format === 'pdf'
+      ? entry.relativePath
+      : computeOutputRelativePath(entry.relativePath, result.format);
     const outAbsolutePath = path.join(UPLOAD_ROOT, job.id, 'compressed', outRelativePath);
     await fs.mkdir(path.dirname(outAbsolutePath), { recursive: true });
     await fs.writeFile(outAbsolutePath, result.buffer);
@@ -138,10 +163,10 @@ async function processFile(job, entry, settings) {
     entry.result = {
       format: result.format,
       quality: result.quality,
-      width: result.width,
-      height: result.height,
-      originalWidth: result.originalWidth,
-      originalHeight: result.originalHeight,
+      width: result.width ?? null,
+      height: result.height ?? null,
+      originalWidth: result.originalWidth ?? null,
+      originalHeight: result.originalHeight ?? null,
       originalSize: result.originalSize,
       compressedSize: result.compressedSize,
       reductionPercent: result.originalSize > 0
@@ -152,6 +177,10 @@ async function processFile(job, entry, settings) {
       alreadyUnderTarget: !!result.alreadyUnderTarget,
       unchanged: !!result.unchanged,
       outputRelativePath: outRelativePath,
+      // PDF-only fields; undefined (and thus omitted from JSON) for images.
+      pageCount: result.pageCount ?? undefined,
+      imagesFound: result.imagesFound ?? undefined,
+      imagesCompressed: result.imagesCompressed ?? undefined,
     };
     emit(job.id, 'file:done', { fileId: entry.id, file: publicFile(entry) });
   } catch (err) {

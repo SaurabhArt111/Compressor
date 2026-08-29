@@ -84,3 +84,23 @@ export function downloadZipUrl(jobId) {
 export function thumbnailUrl(jobId, fileId, variant) {
   return `/api/download/${jobId}/${fileId}/thumbnail/${variant}`;
 }
+
+export async function fetchFileTree() {
+  const res = await fetch('/api/files/tree');
+  if (!res.ok) throw new Error('Could not load uploaded files');
+  return res.json();
+}
+
+export async function deleteFilePath(relativePath) {
+  const res = await fetch(`/api/files/${relativePath.split('/').map(encodeURIComponent).join('/')}`, { method: 'DELETE' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || 'Could not delete that item');
+  return body;
+}
+
+export async function clearAllFiles() {
+  const res = await fetch('/api/files/all', { method: 'DELETE' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || 'Could not clear uploaded files');
+  return body;
+}

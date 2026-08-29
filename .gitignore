@@ -19,3 +19,9 @@ Thumbs.db
 # Logs
 npm-debug.log*
 *.log
+
+# Test-generated fixtures/scratch data (created fresh by the test suites)
+server/src/__test__/fixtures/
+server/src/services/__test__/fixtures/
+server/__test__/scratch-api/
+!.env.example

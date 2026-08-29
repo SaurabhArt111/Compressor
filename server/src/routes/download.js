@@ -73,6 +73,14 @@ router.get('/:jobId/:fileId/thumbnail/:variant', async (req, res) => {
     res.status(404).end();
     return;
   }
+  if (file.kind === 'pdf') {
+    // PDFs get a dedicated document preview panel client-side instead of a
+    // rendered thumbnail - rasterizing a PDF page reliably needs a codec
+    // (pdfium/poppler) that isn't guaranteed to be present in every Sharp
+    // build across deployment environments, so we don't depend on it.
+    res.status(404).end();
+    return;
+  }
 
   try {
     const buffer = await sharp(sourcePath, { sequentialRead: true, limitInputPixels: false })

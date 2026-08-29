@@ -45,23 +45,23 @@ export default function Dropzone({ onFilesAdded, disabled }) {
       <div className="dropzone-icon">
         <UploadCloud size={26} strokeWidth={1.7} />
       </div>
-      <h2>Drag images or a folder here</h2>
-      <p>JPG, PNG, WebP, TIFF, GIF, BMP, AVIF, HEIC — one file or a whole shoot at once.</p>
+      <h2>Drag files, a folder, or a ZIP here</h2>
+      <p>JPG, PNG, WebP, TIFF, GIF, BMP, AVIF, HEIC, PDF — or a ZIP full of any of these — one file, a folder, or a whole shoot at once. Files up to 300-500MB (and beyond) are fine.</p>
       <div className="dropzone-actions">
         <button type="button" className="btn btn-primary" onClick={() => fileInputRef.current?.click()} disabled={disabled}>
-          <FileImage size={15} /> Select images
+          <FileImage size={15} /> Select files
         </button>
         <button type="button" className="btn" onClick={() => folderInputRef.current?.click()} disabled={disabled}>
           <FolderInput size={15} /> Select folder
         </button>
       </div>
-      <p className="dropzone-hint">Everything is processed on your machine — nothing is uploaded to the cloud.</p>
+      <p className="dropzone-hint">A ZIP is unzipped automatically and every supported file inside it is queued for compression.</p>
 
       <input
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,.tif,.tiff,.heic,.heif,.avif"
+        accept="image/*,.tif,.tiff,.heic,.heif,.avif,.pdf,.zip,application/pdf,application/zip"
         style={{ display: 'none' }}
         onChange={handleInputChange}
       />

@@ -1,7 +1,8 @@
-import { Aperture, ImagePlus, History, SlidersHorizontal } from 'lucide-react';
+import { Aperture, ImagePlus, History, SlidersHorizontal, FolderOpen } from 'lucide-react';
 
 const NAV_ITEMS = [
   { id: 'compress', label: 'Compress', icon: ImagePlus },
+  { id: 'files', label: 'Files', icon: FolderOpen },
   { id: 'history', label: 'History', icon: History },
   { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
 ];
@@ -26,7 +27,7 @@ export default function Sidebar({ view, onChange }) {
           </button>
         ))}
       </div>
-      <div className="rail-footer">Runs<br />locally</div>
+      <div className="rail-footer">Self<br />hosted</div>
     </nav>
   );
 }
