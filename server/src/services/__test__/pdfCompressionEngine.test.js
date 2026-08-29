@@ -8,7 +8,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { PDFDocument } from 'pdf-lib';
+import zlib from 'node:zlib';
+import { PDFDocument, PDFName, PDFArray, PDFRawStream } from 'pdf-lib';
 import { compressPdf } from '../pdfCompressionEngine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -124,6 +125,72 @@ async function run() {
   assert(result3.alreadyUnderTarget === true, 'flags alreadyUnderTarget when the source already fits');
   assert(result3.unchanged === true, 'alreadyUnderTarget case keeps the source unchanged');
   assert(Buffer.compare(result3.buffer, await fs.readFile(photoPdfPath)) === 0, 'alreadyUnderTarget result is byte-identical to the source');
+
+  console.log('\nReal-world writer quirk: /Filter wrapped as a single-element array [/DCTDecode]');
+  const arrayFilterPath = path.join(FIXTURE_DIR, 'array-filter.pdf');
+  {
+    const jpg = await makePhotoJpeg(900, 700, 95);
+    const pdfDoc = await PDFDocument.create();
+    const embedded = await pdfDoc.embedJpg(jpg);
+    const page = pdfDoc.addPage([620, 820]);
+    page.drawImage(embedded, { x: 10, y: 100, width: 600, height: 450 });
+    const bytes = await pdfDoc.save();
+
+    // Simulate a writer that always wraps a single filter in an array,
+    // rather than emitting a bare /DCTDecode Name (both are valid PDF).
+    const loaded = await PDFDocument.load(bytes);
+    for (const [, obj] of loaded.context.enumerateIndirectObjects()) {
+      if (obj instanceof PDFRawStream && obj.dict.get(PDFName.of('Subtype'))?.toString() === '/Image') {
+        const arr = PDFArray.withContext(loaded.context);
+        arr.push(PDFName.of('DCTDecode'));
+        obj.dict.set(PDFName.of('Filter'), arr);
+      }
+    }
+    await fs.writeFile(arrayFilterPath, await loaded.save());
+  }
+  const arrayFilterSize = (await fs.stat(arrayFilterPath)).size;
+  const result4 = await compressPdf({ filePath: arrayFilterPath, targetBytes: Math.round(arrayFilterSize * 0.3) });
+  console.log(`  imagesFound=${result4.imagesFound} imagesCompressed=${result4.imagesCompressed} targetReached=${result4.targetReached}`);
+  assert(result4.imagesFound === 1, 'detects a JPEG whose /Filter is a single-element array, not just a bare Name');
+  assert(result4.imagesCompressed === 1, 'successfully recompresses an array-filter JPEG');
+  assert(result4.targetReached === true, 'array-filter case still reaches its target');
+
+  console.log('\nReal-world writer quirk: /Filter chain [/FlateDecode /DCTDecode]');
+  const chainFilterPath = path.join(FIXTURE_DIR, 'chain-filter.pdf');
+  {
+    const jpg = await makePhotoJpeg(900, 700, 95);
+    const pdfDoc = await PDFDocument.create();
+    const embedded = await pdfDoc.embedJpg(jpg);
+    const page = pdfDoc.addPage([620, 820]);
+    page.drawImage(embedded, { x: 10, y: 100, width: 600, height: 450 });
+    const bytes = await pdfDoc.save();
+
+    // Simulate a writer that additionally flate-wraps an already-JPEG
+    // stream (wasteful, but legal PDF, and seen in the wild).
+    const loaded = await PDFDocument.load(bytes);
+    for (const [, obj] of loaded.context.enumerateIndirectObjects()) {
+      if (obj instanceof PDFRawStream && obj.dict.get(PDFName.of('Subtype'))?.toString() === '/Image') {
+        const arr = PDFArray.withContext(loaded.context);
+        arr.push(PDFName.of('FlateDecode'));
+        arr.push(PDFName.of('DCTDecode'));
+        obj.dict.set(PDFName.of('Filter'), arr);
+        obj.contents = zlib.deflateSync(Buffer.from(obj.contents));
+      }
+    }
+    await fs.writeFile(chainFilterPath, await loaded.save());
+  }
+  const chainFilterSize = (await fs.stat(chainFilterPath)).size;
+  const result5 = await compressPdf({ filePath: chainFilterPath, targetBytes: Math.round(chainFilterSize * 0.3) });
+  console.log(`  imagesFound=${result5.imagesFound} imagesCompressed=${result5.imagesCompressed} targetReached=${result5.targetReached}`);
+  assert(result5.imagesFound === 1, 'detects and inflates a [/FlateDecode /DCTDecode] chained JPEG');
+  assert(result5.imagesCompressed === 1, 'successfully recompresses a flate-wrapped JPEG');
+  assert(result5.targetReached === true, 'chain-filter case still reaches its target');
+  const reloaded5 = await PDFDocument.load(result5.buffer);
+  assert(reloaded5.getPageCount() === 1, 'the re-saved chain-filter PDF still loads correctly');
+
+  console.log('\nSanity: pdf-lib exposes isEncrypted, used to explain encrypted-PDF shortfalls');
+  const plainDoc = await PDFDocument.load(await fs.readFile(textPdfPath), { ignoreEncryption: true });
+  assert(plainDoc.isEncrypted === false, 'a normal, unencrypted PDF reports isEncrypted: false');
 
   console.log(`\n${passed} passed, ${failures} failed.\n`);
   if (failures > 0) process.exitCode = 1;

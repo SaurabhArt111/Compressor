@@ -37,8 +37,8 @@ export { CLIENT_DIST };
 // loading whole files as JS buffers), but decoding several 300-500MB source
 // files at once can still spike RAM, so we cap concurrency server-side no
 // matter what a client asks for.
-export const MAX_SERVER_CONCURRENCY = envInt('MAX_SERVER_CONCURRENCY', 4);
-export const DEFAULT_CONCURRENCY = envInt('DEFAULT_CONCURRENCY', 2);
+export const MAX_SERVER_CONCURRENCY = envInt('MAX_SERVER_CONCURRENCY', 6);
+export const DEFAULT_CONCURRENCY = envInt('DEFAULT_CONCURRENCY', 3);
 
 // How many embedded images inside a single PDF are recompressed in parallel.
 export const PDF_IMAGE_CONCURRENCY = envInt('PDF_IMAGE_CONCURRENCY', 4);

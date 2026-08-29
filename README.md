@@ -60,7 +60,9 @@ for env var tuning, a plain `docker build`/`docker run`, and a PM2 option.
 Every completed batch is recorded in **History**, defaults (target size,
 format, concurrency, quality bounds) live in **Settings**, and everything
 that's ever been uploaded or produced lives in **Files** — a browser for the
-server's uploads directory where you can inspect and delete anything.
+server's uploads directory where you can inspect, rename, and delete
+anything (see [Files page](#files-page-naming--isolation) below for exactly
+how uploads are named and kept isolated from each other).
 
 ### If you refresh, close the tab, or lose your connection mid-batch
 
@@ -85,12 +87,25 @@ is running:
    is *also* no larger than the original. If re-encoding doesn't help, it
    keeps the original bytes untouched rather than "compressing" a file into
    something larger.
-2. **Binary-search quality** at full resolution for the highest quality
-   setting (1–100) whose encoded size still fits under the target.
-3. **Resolution ladder.** If even the quality floor overshoots the target,
-   it steps resolution down (100% → 90% → 80% … → 40%) and re-runs the
-   quality search at each step, stopping at the first one that fits.
-4. **Honest fallback.** If nothing on the ladder reaches the target, it
+2. **Resolution estimate for large sources.** For a genuinely large image
+   (a big scan, a several-hundred-megapixel photo), naively starting a full
+   quality search at 100% resolution — and only stepping resolution down
+   after that fully fails — means potentially dozens of full-resolution
+   encode attempts before ever reaching a size that fits: minutes of wasted
+   work (and memory) on a single file. Instead, one cheap small probe encode
+   (shrunk during decode, so it stays fast regardless of source size)
+   estimates the bytes-per-pixel this specific image gets at the target
+   format, extrapolates the scale factor needed, and starts the real search
+   there (with one ladder step of headroom) instead of from scratch. This is
+   purely a starting-point optimization — the full ladder fallback below
+   still runs if the estimate undershoots, so it can only save time, never
+   produce a worse result.
+3. **Binary-search quality** at the chosen resolution for the highest
+   quality setting (1–100) whose encoded size still fits under the target.
+4. **Resolution ladder.** If even the quality floor overshoots the target,
+   it steps resolution down further (100% → 90% → 80% … → 40%) and re-runs
+   the quality search at each step, stopping at the first one that fits.
+5. **Honest fallback.** If nothing on the ladder reaches the target, it
    returns the smallest result found and reports `targetReached: false`
    rather than continuing to crush quality/resolution to force a match.
 
@@ -110,12 +125,26 @@ writing the result back into the PDF's own image stream, and re-saving with
 and document structure completely untouched. No system dependency like
 Ghostscript is required, which keeps this simple to deploy.
 
-For safety, only baseline JPEG images without a soft mask/stencil mask are
-touched, and any image whose re-encoded channel count doesn't match the
-original (a sign it's a CMYK JPEG, which Sharp decodes to RGB) is left
-alone rather than risk a color-broken PDF. A PDF with no compressible images
-(pure text/vector, or scanned as CCITT fax images) is reported honestly as
-`imagesFound: 0`, `unchanged: true` rather than being mangled.
+Detection handles the real-world variety in how PDF writers encode images:
+a bare `/DCTDecode` filter, a single-element `[/DCTDecode]` array (some
+writers always wrap filters in an array), and a `[/FlateDecode /DCTDecode]`
+chain (a lossless pre-filter wrapped around an already-JPEG-compressed
+stream — wasteful, but legal PDF, and it happens). For safety, only images
+without a soft mask/stencil mask are touched, and any image whose
+re-encoded channel count doesn't match the original (a sign it's a CMYK
+JPEG, which Sharp decodes to RGB) is left alone rather than risk a
+color-broken PDF.
+
+A PDF with nothing the engine can safely recompress is reported honestly —
+`imagesFound: 0`, `unchanged: true` — **with a plain-language reason why**,
+surfaced right in the result: it's encrypted/password-protected (a very
+common default for scanner-software output, and one pdf-lib genuinely can't
+decrypt — even with `ignoreEncryption: true`, which only skips *erroring* on
+an encrypted file, it doesn't actually decrypt its streams), it's pure
+text/vector, or every embedded image uses an encoding this tool doesn't
+touch (CCITT fax, JPEG2000). If your scanned PDF shows `imagesFound: 0` with
+an "encrypted" note, remove its password protection first (Acrobat's
+"Remove Security", or `qpdf --decrypt in.pdf out.pdf`) and re-upload.
 
 ### ZIP archives — `server/src/services/zipExtractor.js`
 
@@ -130,6 +159,31 @@ traversal segments.
 All three engines are exercised by real, generated-file tests — see
 [Testing](#testing).
 
+## Files page: naming & isolation
+
+The **Files** page shows every job (past or present) as a top-level folder.
+Its *display name* is derived automatically and persisted alongside the
+job (`meta.json`, so it survives a server restart):
+
+- **Uploaded a folder** (drag-and-drop or the folder picker)? The label is
+  that folder's **real name** — never a generated one.
+- **Uploaded a single ZIP**? The label is the **ZIP's own filename**.
+- **Uploaded loose files** with no shared folder? The label is the
+  **first uploaded file's name**.
+
+The full folder hierarchy is preserved end to end and independently
+navigable at every level — a subfolder's contents are exactly its own
+files, never anything from a sibling folder.
+
+Renaming a **top-level** entry in the Files page only changes this display
+label; renaming a **file or subfolder inside** a job does a real filesystem
+rename. Either way, isolation is absolute: the label is purely cosmetic,
+while every job's actual files live under a unique internal id that's never
+exposed as the folder name and never reused, so two uploads that happen to
+produce the identical label (e.g. two folders both named "Shoot") never
+share a directory or mix files — they simply show up as two separate
+entries.
+
 ## Efficient handling of very large files
 
 - Uploads use `multer`'s **disk storage** (streamed straight to disk), never
@@ -141,15 +195,23 @@ All three engines are exercised by real, generated-file tests — see
   generated by the server — the browser never receives the full-size
   original or compressed file just to render a preview.
 - **Bounded concurrency**: you can pick how many files process in parallel
-  (Settings → Concurrency), but the server also enforces its own hard
-  ceiling (`MAX_SERVER_CONCURRENCY`, default 4) regardless of what's
+  (Settings → Concurrency, which reads the server's real ceiling from
+  `/api/config` rather than guessing), but the server also enforces its own
+  hard ceiling (`MAX_SERVER_CONCURRENCY`, default 6) regardless of what's
   requested, so a batch of huge files can't spike RAM by all decoding at
   once. PDF image recompression has its own inner concurrency cap
-  (`PDF_IMAGE_CONCURRENCY`) for documents with many embedded photos.
+  (`PDF_IMAGE_CONCURRENCY`) for documents with many embedded photos. If
+  you're processing several very large (300MB+) files together, a *lower*
+  concurrency can actually be faster overall by avoiding RAM contention -
+  see the hint text next to the setting.
 - ZIP downloads are **streamed** via `archiver` directly to the HTTP
   response, not built in memory first.
 - Per-file upload ceiling defaults to **2GB** and is configurable
   (`MAX_UPLOAD_BYTES`) for even larger sources.
+- A single failing request can't take the whole server down: unhandled
+  promise rejections are logged and the server keeps running (rather than
+  Node's default of crashing the entire process — and every other job's
+  websocket connection along with it — over one unrelated bug).
 
 ## Project structure
 
@@ -159,7 +221,7 @@ compressor/
 │   └── src/
 │       ├── components/           # Dropzone, ResultCard, FileManagerView, HistoryView, ...
 │       ├── context/SettingsContext.jsx
-│       ├── hooks/useSocket.js    # Socket.IO wiring for live progress
+│       ├── hooks/useSocket.js    # Socket.IO wiring for live progress + reconnect resync
 │       └── utils/                # api.js, fileTree.js (folder traversal), format.js
 ├── server/                       # Node + Express + Sharp + pdf-lib backend
 │   └── src/
@@ -169,12 +231,14 @@ compressor/
 │       │   ├── pdfCompressionEngine.js # PDF compression algorithm
 │       │   ├── zipExtractor.js         # safe ZIP-upload extraction
 │       │   ├── jobManager.js           # job/file state, concurrency, progress events
+│       │   ├── jobMeta.js              # persisted per-job metadata (the Files-page label)
 │       │   ├── historyStore.js         # JSON-file persisted history
 │       │   ├── cleanup.js              # sweeps old uploads after 24h
 │       │   └── concurrency.js          # tiny dependency-free limiter
 │       ├── utils/paths.js         # shared path-sanitization / traversal guards
+│       ├── utils/labels.js        # derives the Files-page project label
 │       ├── __test__/api.test.mjs                        # end-to-end HTTP API test
-│       └── services/__test__/*.test.js                   # engine/zip unit tests
+│       └── services|utils/__test__/*.test.js             # engine/zip/label unit tests
 ├── Dockerfile, docker-compose.yml, .dockerignore, .env.example
 ├── package.json                  # npm workspaces root (install/dev/build/start)
 └── README.md
@@ -182,26 +246,32 @@ compressor/
 
 ## Testing
 
-Four real test suites are included (no mocks — they generate actual
+Five real test suites are included (no mocks — they generate actual
 images/PDFs/ZIPs and, for the API suite, run the actual server as a
 subprocess):
 
 ```bash
 cd server
-npm test          # runs all four suites below
+npm test          # runs all five suites below
 npm run test:engine  # image compression: quality search, format selection,
-                      # transparency, fallback honesty
+                      # transparency, fallback honesty, the large-image
+                      # resolution probe (correctness + a wall-clock guard)
 npm run test:pdf      # PDF compression: embedded-image recompression,
-                      # text-only honesty, already-under-target short-circuit
+                      # array/chained-filter detection, text-only honesty,
+                      # already-under-target short-circuit
 npm run test:zip      # ZIP upload extraction: nested folders, junk filtering,
                       # zip-slip traversal protection
-npm run test:api      # full HTTP API: upload (images+PDF+ZIP), compress,
-                      # progress, download, ZIP, history, file manager,
-                      # active-job delete protection, cancellation
+npm run test:labels   # Files-page label derivation: folder name, ZIP name,
+                      # first-file fallback, sanitization
+npm run test:api      # full HTTP API: upload (images+PDF+ZIP+folders),
+                      # compress, progress, download, ZIP, history, file
+                      # manager (browse/rename/delete), same-name-upload
+                      # isolation, active-job protection, cancellation
 ```
 
-Note: `test:engine` generates a real ~90MB TIFF fixture and runs the actual
-AVIF/WebP encoders, so a full run takes a few minutes; the other three
+Note: `test:engine` generates a real ~90MB TIFF fixture (plus a second,
+~200MB one for the large-image regression test) and runs the actual
+AVIF/WebP encoders, so a full run takes a few minutes; the other four
 finish in seconds.
 
 ## Configuration
@@ -214,7 +284,7 @@ environment variables (see `.env.example` for the full list with defaults):
 | `PORT` / `HOST` | `5000` / `0.0.0.0` | Where the server listens |
 | `CORS_ORIGIN` | `*` | Comma-separated allowlist, or `*` |
 | `UPLOAD_ROOT` / `HISTORY_FILE` | `server/uploads` / `server/data/history.json` | Storage locations |
-| `MAX_SERVER_CONCURRENCY` | 4 | Hard cap on parallel image/PDF jobs |
+| `MAX_SERVER_CONCURRENCY` | 6 | Hard cap on parallel image/PDF jobs (exposed to the client read-only via `GET /api/config`) |
 | `PDF_IMAGE_CONCURRENCY` | 4 | Parallel image recompression within one PDF |
 | `MAX_UPLOAD_BYTES` | 2GB | Per-file upload limit |
 | `QUALITY_FLOOR_DEFAULT` / `_CEILING_DEFAULT` | 35 / 100 | Quality search bounds |
@@ -307,11 +377,35 @@ container restarts/rolling upgrades).
   default request/header timeouts specifically so 300–500MB uploads aren't
   cut off, but very restrictive proxies/firewalls in front of the server
   could still impose their own limits (see the reverse-proxy notes above).
-- **A PDF didn't shrink much**: the PDF engine only recompresses embedded
-  JPEG photos; a PDF that's mostly text/vector graphics, or one already
-  using CCITT-fax scanned images, has little the engine can safely touch.
-  The result will honestly report `imagesFound` and `targetReached: false`
-  rather than degrade the document trying to force a smaller file.
+- **A PDF shows `imagesFound: 0` / didn't shrink at all**: check the `note`
+  shown on its result card. The PDF engine only recompresses embedded
+  baseline-JPEG photos, and the most common real-world reason for finding
+  none is that the **PDF is encrypted/password-protected** (a common
+  default for scanner-software output) — pdf-lib can load the document's
+  structure but genuinely cannot decrypt its stream content, so there's
+  nothing to read. Remove the password protection first (Acrobat's "Remove
+  Security", or `qpdf --decrypt in.pdf out.pdf`) and re-upload. The other
+  possibility is a PDF that's mostly text/vector graphics, or one using
+  CCITT-fax/JPEG2000 scanned images, which has little the engine can safely
+  touch. Either way the result honestly reports `targetReached: false`
+  rather than degrading the document trying to force a smaller file.
+- **A single very large (300MB+, high-megapixel) image seems to take a long
+  time**: the engine estimates the resolution it'll need from a cheap probe
+  before committing to any full-resolution encode (see [the algorithm](#images--serversrcservicescompressionenginejs)
+  above), so this should generally now take well under a minute even for a
+  many-hundred-megapixel source. If it's still slow, check the server's
+  available RAM — decoding a single huge image still needs a meaningful
+  amount of memory, and if the machine is swapping, everything slows down
+  disproportionately; lowering **Settings → Default concurrency** so fewer
+  huge files decode at once can help more than raising it would.
+- **WebSocket console errors in dev mode** (`ws://localhost:5173/socket.io/...
+  failed`): this means the *backend* isn't reachable from the Vite dev
+  server's proxy — almost always because only `npm run dev -w client` was
+  started instead of the root `npm run dev` (which runs both the client and
+  server together). Check that the `[SERVER]`-prefixed process in that
+  terminal actually started and is listening, with no startup error above
+  it. If the backend is genuinely still starting up, the client
+  automatically re-syncs its state once the connection comes up.
 - **Files piling up on the server**: the hourly cleanup sweep removes
   finished jobs' files after `JOB_RETENTION_MS` (24h by default), but you
   can also open the **Files** page any time to see exactly what's on disk

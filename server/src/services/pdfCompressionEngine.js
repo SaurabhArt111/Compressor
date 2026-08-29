@@ -1,6 +1,7 @@
-import { PDFDocument, PDFName, PDFNumber, PDFRawStream } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFArray } from 'pdf-lib';
 import sharp from 'sharp';
 import fs from 'node:fs/promises';
+import zlib from 'node:zlib';
 import { CancelledError } from './compressionEngine.js';
 import { createLimiter } from './concurrency.js';
 import {
@@ -15,15 +16,35 @@ const NAME_SUBTYPE = PDFName.of('Subtype');
 const NAME_IMAGE = PDFName.of('Image');
 const NAME_FILTER = PDFName.of('Filter');
 const NAME_DCT = PDFName.of('DCTDecode');
+const NAME_FLATE = PDFName.of('FlateDecode');
 const NAME_SMASK = PDFName.of('SMask');
 const NAME_MASK = PDFName.of('Mask');
 const NAME_WIDTH = PDFName.of('Width');
 const NAME_HEIGHT = PDFName.of('Height');
 
+/** Normalizes a PDF stream's /Filter entry (a bare Name, or an Array for a
+ * decode chain) into an ordered array of filter name strings, e.g. "/DCTDecode".
+ * Most real-world writers emit a bare Name for a single filter, but some
+ * always wrap it in a one-element Array, and a few legitimately chain a
+ * lossless pre-filter (typically FlateDecode) in front of DCTDecode. */
+function filterChain(filterEntry) {
+  if (!filterEntry) return [];
+  if (filterEntry instanceof PDFArray) {
+    const arr = [];
+    for (let i = 0; i < filterEntry.size(); i += 1) arr.push(filterEntry.get(i)?.toString());
+    return arr.filter(Boolean);
+  }
+  return [filterEntry.toString()];
+}
+
 /**
  * Finds every embedded JPEG (DCTDecode) image XObject in a loaded PDFDocument
  * that we can safely re-encode:
- *  - baseline JPEG only (Filter === DCTDecode, not a filter array/chain)
+ *  - baseline JPEG only, as a bare /DCTDecode filter, a single-element
+ *    [/DCTDecode] array (some writers always wrap filters in an array), or
+ *    a [/FlateDecode /DCTDecode] chain (rare, but some tools flate-wrap an
+ *    already-JPEG-compressed stream) - the FlateDecode layer is inflated
+ *    first so Sharp sees a plain JPEG bitstream either way.
  *  - no soft mask / stencil mask (transparency compositing is easy to break
  *    if we change the image's pixel data without touching the mask)
  *  - decodes to the same channel count it started with (guards against
@@ -33,19 +54,47 @@ const NAME_HEIGHT = PDFName.of('Height');
  *
  * Anything that doesn't qualify is left completely untouched, exactly as
  * the image engine leaves a file untouched when it can't safely help -
- * honesty over forcing a result.
+ * honesty over forcing a result. Every image object seen (including ones we
+ * can't touch) is tallied so the caller can explain *why* nothing was
+ * compressible, instead of just reporting a bare zero.
  */
 async function findCompressibleImages(pdfDoc) {
   const candidates = [];
+  let totalImageObjects = 0;
+  const unsupportedFilters = new Set();
+
   for (const [, obj] of pdfDoc.context.enumerateIndirectObjects()) {
     if (!(obj instanceof PDFRawStream)) continue;
     const subtype = obj.dict.get(NAME_SUBTYPE);
     if (!subtype || subtype.toString() !== NAME_IMAGE.toString()) continue;
-    const filter = obj.dict.get(NAME_FILTER);
-    if (!filter || filter.toString() !== NAME_DCT.toString()) continue;
-    if (obj.dict.get(NAME_SMASK) || obj.dict.get(NAME_MASK)) continue;
+    totalImageObjects += 1;
 
-    const original = Buffer.from(obj.contents);
+    const chain = filterChain(obj.dict.get(NAME_FILTER));
+    const lastFilter = chain[chain.length - 1];
+    if (lastFilter !== NAME_DCT.toString()) {
+      unsupportedFilters.add(lastFilter || 'uncompressed');
+      continue;
+    }
+    // Anything before the final DCTDecode must be losslessly unwrapped
+    // first - we only know how to do that for a leading FlateDecode.
+    const preFilters = chain.slice(0, -1);
+    if (preFilters.some((f) => f !== NAME_FLATE.toString())) {
+      unsupportedFilters.add(chain.join(' + '));
+      continue;
+    }
+    if (obj.dict.get(NAME_SMASK) || obj.dict.get(NAME_MASK)) {
+      unsupportedFilters.add('has transparency mask');
+      continue;
+    }
+
+    let original;
+    try {
+      original = preFilters.length > 0 ? zlib.inflateSync(Buffer.from(obj.contents)) : Buffer.from(obj.contents);
+    } catch {
+      unsupportedFilters.add('corrupt stream');
+      continue;
+    }
+
     try {
       // eslint-disable-next-line no-await-in-loop
       const meta = await sharp(original, { limitInputPixels: false }).metadata();
@@ -60,9 +109,26 @@ async function findCompressibleImages(pdfDoc) {
       });
     } catch {
       // Not a JPEG Sharp can decode (corrupt / exotic subsampling) - skip it.
+      unsupportedFilters.add('undecodable JPEG stream');
     }
   }
-  return candidates;
+  return { candidates, totalImageObjects, unsupportedFilters };
+}
+
+/** Builds a human-readable explanation for why a PDF's images couldn't be
+ * (fully) compressed, surfaced in the result so the UI can explain a
+ * `imagesFound: 0` or partial result instead of leaving it unexplained. */
+function explainShortfall({ isEncrypted, totalImageObjects, unsupportedFilters }) {
+  if (isEncrypted) {
+    return 'This PDF is encrypted/password-protected, so its embedded images can\'t be read for recompression. Remove the password protection first (e.g. Acrobat\'s "Remove Security", or `qpdf --decrypt in.pdf out.pdf`) and re-upload.';
+  }
+  if (totalImageObjects === 0) {
+    return 'No embedded images were found in this PDF (it appears to be text/vector-only), so there was nothing to recompress.';
+  }
+  if (unsupportedFilters.size > 0) {
+    return `Found ${totalImageObjects} embedded image(s), but none are in a format this tool can safely recompress (detected: ${Array.from(unsupportedFilters).join(', ')}). Only baseline JPEG images can be recompressed today.`;
+  }
+  return null;
 }
 
 /** Re-encodes every candidate at the given scale/quality and writes the
@@ -93,6 +159,10 @@ async function applyEncoding(candidates, { scale, quality, isCancelled }) {
     }
 
     c.obj.contents = data;
+    // The stream may have started as [/FlateDecode /DCTDecode]; the
+    // re-encoded bytes are plain JPEG, so the Filter must be normalized to
+    // just DCTDecode (dropping any pre-filter) to match what's now stored.
+    c.obj.dict.set(NAME_FILTER, NAME_DCT);
     if (scale < 1) {
       c.obj.dict.set(NAME_WIDTH, PDFNumber.of(info.width));
       c.obj.dict.set(NAME_HEIGHT, PDFNumber.of(info.height));
@@ -147,20 +217,25 @@ export async function compressPdf({
       pageCount: null,
       imagesFound: 0,
       imagesCompressed: 0,
+      note: null,
     };
   }
 
   const pdfDoc = await PDFDocument.load(originalBytes, { ignoreEncryption: true, updateMetadata: false });
   const pageCount = pdfDoc.getPageCount();
-  const candidates = await findCompressibleImages(pdfDoc);
+  const { candidates, totalImageObjects, unsupportedFilters } = await findCompressibleImages(pdfDoc);
 
   const saveDoc = () => pdfDoc.save({ useObjectStreams: false, addDefaultPage: false });
 
   if (candidates.length === 0) {
-    // Nothing we can safely recompress (text/vector-only PDF, or every
-    // embedded image is a format/colorspace we chose not to touch). Rather
-    // than mangle the document trying to force a smaller file, report the
-    // honest result: unchanged, target not reached.
+    // Nothing we can safely recompress: the document is encrypted (pdf-lib
+    // can load an encrypted PDF's structure with ignoreEncryption, but
+    // can't decrypt its stream content - a common case for scanner
+    // software's default "restricted" PDFs), it's text/vector-only, or
+    // every embedded image uses an encoding we chose not to touch (e.g.
+    // CCITT fax, JPEG2000, or a CMYK JPEG). Rather than mangle the document
+    // trying to force a smaller file, report the honest result - unchanged,
+    // target not reached - with a plain-language reason why.
     onProgress?.(1, 1, 1);
     return {
       buffer: originalBytes,
@@ -175,6 +250,7 @@ export async function compressPdf({
       pageCount,
       imagesFound: 0,
       imagesCompressed: 0,
+      note: explainShortfall({ isEncrypted: pdfDoc.isEncrypted, totalImageObjects, unsupportedFilters }),
     };
   }
 
@@ -263,6 +339,9 @@ export async function compressPdf({
       pageCount,
       imagesFound: candidates.length,
       imagesCompressed: 0,
+      note: unsupportedFilters.size > 0
+        ? `Recompressing the ${candidates.length} eligible image(s) didn't reduce the file, and ${unsupportedFilters.size > 0 ? 'some embedded images were left untouched' : ''} (detected: ${Array.from(unsupportedFilters).join(', ')}).`
+        : null,
     };
   }
 
@@ -279,5 +358,8 @@ export async function compressPdf({
     pageCount,
     imagesFound: candidates.length,
     imagesCompressed: candidates.length - chosenSkipped,
+    note: unsupportedFilters.size > 0
+      ? `${totalImageObjects - candidates.length} of ${totalImageObjects} embedded image(s) were left untouched (detected: ${Array.from(unsupportedFilters).join(', ')}).`
+      : null,
   };
 }

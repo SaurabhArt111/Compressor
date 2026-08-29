@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FolderOpen, Folder, ChevronRight, ChevronDown, File as FileIcon,
-  FileImage, FileText, Trash2, RefreshCcw, HardDrive, Loader2, Lock,
+  FileImage, FileText, Trash2, RefreshCcw, HardDrive, Loader2, Lock, Pencil, Check, X,
 } from 'lucide-react';
-import { fetchFileTree, deleteFilePath, clearAllFiles } from '../utils/api';
+import { fetchFileTree, deleteFilePath, renameFilePath, clearAllFiles } from '../utils/api';
 import { formatBytes, formatDate } from '../utils/format';
 import { isPdfFile } from '../utils/fileTree';
 
@@ -16,43 +16,104 @@ function NodeIcon({ node, expanded }) {
   return <FileIcon size={15} strokeWidth={1.7} />;
 }
 
-function TreeNode({ node, depth, expandedPaths, onToggle, onDelete, deletingPath }) {
+function TreeNode({
+  node, depth, expandedPaths, onToggle, onDelete, deletingPath,
+  renamingPath, onStartRename, onSubmitRename, onCancelRename, renameSubmitting,
+}) {
   const expanded = node.type === 'dir' && expandedPaths.has(node.path);
   const isDeleting = deletingPath === node.path;
+  const isRenaming = renamingPath === node.path;
   const locked = node.type === 'dir' && node.active;
+  const [draft, setDraft] = useState(node.name);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (isRenaming) {
+      setDraft(node.name);
+      // Focus once the input mounts, and select the name so typing replaces it outright.
+      requestAnimationFrame(() => inputRef.current?.select());
+    }
+  }, [isRenaming, node.name]);
+
+  const submit = () => {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === node.name) { onCancelRename(); return; }
+    onSubmitRename(node, trimmed);
+  };
 
   return (
     <div className="tree-node">
       <div className={`tree-row${locked ? ' locked' : ''}`} style={{ paddingLeft: 10 + depth * 18 }}>
-        <button
-          type="button"
-          className="tree-row-main"
-          onClick={() => node.type === 'dir' && onToggle(node.path)}
-          disabled={node.type !== 'dir'}
-        >
-          {node.type === 'dir' ? (
-            <span className="tree-caret" aria-hidden="true">
-              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            </span>
-          ) : <span className="tree-caret" aria-hidden="true" />}
-          <span className="tree-icon"><NodeIcon node={node} expanded={expanded} /></span>
-          <span className="tree-name">{node.name}</span>
-          {locked && <span className="badge badge-neutral tree-badge"><Lock size={10} /> processing</span>}
-        </button>
-        <span className="tree-meta">
-          {node.type === 'dir' && <span className="tree-count">{node.fileCount} file{node.fileCount === 1 ? '' : 's'}</span>}
-          <span className="tree-size mono">{formatBytes(node.size)}</span>
-          <span className="tree-date">{formatDate(node.mtime)}</span>
+        {isRenaming ? (
+          <div className="tree-row-main tree-row-rename">
+            <span className="tree-caret" aria-hidden="true" />
+            <span className="tree-icon"><NodeIcon node={node} expanded={expanded} /></span>
+            <input
+              ref={inputRef}
+              className="tree-rename-input"
+              value={draft}
+              disabled={renameSubmitting}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submit();
+                if (e.key === 'Escape') onCancelRename();
+              }}
+            />
+          </div>
+        ) : (
           <button
             type="button"
-            className="icon-btn"
-            aria-label={`Delete ${node.name}`}
-            title={locked ? 'This job is still processing' : `Delete ${node.name}`}
-            disabled={locked || isDeleting}
-            onClick={() => onDelete(node)}
+            className="tree-row-main"
+            onClick={() => node.type === 'dir' && onToggle(node.path)}
+            disabled={node.type !== 'dir'}
           >
-            {isDeleting ? <Loader2 size={14} className="loader" /> : <Trash2 size={14} />}
+            {node.type === 'dir' ? (
+              <span className="tree-caret" aria-hidden="true">
+                {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </span>
+            ) : <span className="tree-caret" aria-hidden="true" />}
+            <span className="tree-icon"><NodeIcon node={node} expanded={expanded} /></span>
+            <span className="tree-name" title={depth === 0 ? `${node.name} (job ${node.path})` : node.name}>{node.name}</span>
+            {locked && <span className="badge badge-neutral tree-badge"><Lock size={10} /> processing</span>}
           </button>
+        )}
+        <span className="tree-meta">
+          {isRenaming ? (
+            <>
+              <button type="button" className="icon-btn" aria-label="Save name" title="Save" disabled={renameSubmitting} onClick={submit}>
+                {renameSubmitting ? <Loader2 size={14} className="loader" /> : <Check size={14} />}
+              </button>
+              <button type="button" className="icon-btn" aria-label="Cancel rename" title="Cancel" disabled={renameSubmitting} onClick={onCancelRename}>
+                <X size={14} />
+              </button>
+            </>
+          ) : (
+            <>
+              {node.type === 'dir' && <span className="tree-count">{node.fileCount} file{node.fileCount === 1 ? '' : 's'}</span>}
+              <span className="tree-size mono">{formatBytes(node.size)}</span>
+              <span className="tree-date">{formatDate(node.mtime)}</span>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={`Rename ${node.name}`}
+                title={locked && node.type !== 'dir' ? 'This job is still processing' : `Rename ${node.name}`}
+                disabled={locked && node.type !== 'dir'}
+                onClick={() => onStartRename(node)}
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={`Delete ${node.name}`}
+                title={locked ? 'This job is still processing' : `Delete ${node.name}`}
+                disabled={locked || isDeleting}
+                onClick={() => onDelete(node)}
+              >
+                {isDeleting ? <Loader2 size={14} className="loader" /> : <Trash2 size={14} />}
+              </button>
+            </>
+          )}
         </span>
       </div>
       {node.type === 'dir' && expanded && node.children.map((child) => (
@@ -64,6 +125,11 @@ function TreeNode({ node, depth, expandedPaths, onToggle, onDelete, deletingPath
           onToggle={onToggle}
           onDelete={onDelete}
           deletingPath={deletingPath}
+          renamingPath={renamingPath}
+          onStartRename={onStartRename}
+          onSubmitRename={onSubmitRename}
+          onCancelRename={onCancelRename}
+          renameSubmitting={renameSubmitting}
         />
       ))}
     </div>
@@ -78,6 +144,8 @@ export default function FileManagerView() {
   const [expandedPaths, setExpandedPaths] = useState(() => new Set());
   const [deletingPath, setDeletingPath] = useState(null);
   const [clearing, setClearing] = useState(false);
+  const [renamingPath, setRenamingPath] = useState(null);
+  const [renameSubmitting, setRenameSubmitting] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -112,6 +180,30 @@ export default function FileManagerView() {
       setError(err.message);
     } finally {
       setDeletingPath(null);
+    }
+  };
+
+  const handleStartRename = (node) => {
+    setError('');
+    setNotice('');
+    setRenamingPath(node.path);
+  };
+
+  const handleCancelRename = () => setRenamingPath(null);
+
+  const handleSubmitRename = async (node, newName) => {
+    setRenameSubmitting(true);
+    setError('');
+    setNotice('');
+    try {
+      await renameFilePath(node.path, newName);
+      setNotice(`Renamed to "${newName}".`);
+      setRenamingPath(null);
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRenameSubmitting(false);
     }
   };
 
@@ -192,6 +284,11 @@ export default function FileManagerView() {
               onToggle={handleToggle}
               onDelete={handleDelete}
               deletingPath={deletingPath}
+              renamingPath={renamingPath}
+              onStartRename={handleStartRename}
+              onSubmitRename={handleSubmitRename}
+              onCancelRename={handleCancelRename}
+              renameSubmitting={renameSubmitting}
             />
           ))}
         </div>

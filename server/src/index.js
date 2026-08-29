@@ -8,7 +8,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { Server as SocketIOServer } from 'socket.io';
 
-import { PORT, HOST, CLIENT_DIST, CORS_ORIGIN, IS_PRODUCTION, NODE_ENV } from './config.js';
+import { PORT, HOST, CLIENT_DIST, CORS_ORIGIN, IS_PRODUCTION, NODE_ENV, MAX_SERVER_CONCURRENCY, MAX_UPLOAD_BYTES, MAX_FILES_PER_JOB } from './config.js';
 import uploadRouter from './routes/upload.js';
 import compressRouter from './routes/compress.js';
 import downloadRouter from './routes/download.js';
@@ -37,6 +37,13 @@ app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json());
 
 app.get('/api/health', (req, res) => res.json({ ok: true, env: NODE_ENV }));
+// Read-only operational limits the client uses to set sensible UI bounds
+// (e.g. the concurrency slider) instead of guessing/hardcoding them.
+app.get('/api/config', (req, res) => res.json({
+  maxServerConcurrency: MAX_SERVER_CONCURRENCY,
+  maxUploadBytes: MAX_UPLOAD_BYTES,
+  maxFilesPerJob: MAX_FILES_PER_JOB,
+}));
 app.use('/api/upload', uploadRouter);
 app.use('/api/compress', compressRouter);
 app.use('/api/download', downloadRouter);
@@ -108,3 +115,29 @@ function shutdown(signal) {
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// A single bad request/edge case throwing inside some `await` that isn't
+// wrapped in its own try/catch (jobManager.processFile already catches
+// everything from the compression engines themselves, but routes are
+// simpler code and can still slip up) would otherwise crash the *entire*
+// server - killing every other in-progress job and every connected
+// client's websocket along with it, for one unrelated failure. Log and
+// keep serving everyone else instead.
+process.on('unhandledRejection', (reason) => {
+  // eslint-disable-next-line no-console
+  console.error('Unhandled promise rejection (server continues running):', reason);
+});
+
+// An uncaught *synchronous* exception means the process is in a genuinely
+// unknown state (Node's own guidance: don't try to resume normal
+// operation). Log clearly - so a crash shows up as an explained shutdown
+// in the server log rather than the process just silently vanishing - then
+// exit deliberately so a process manager (Docker/PM2/systemd) can restart
+// a clean instance.
+process.on('uncaughtException', (err) => {
+  // eslint-disable-next-line no-console
+  console.error('Uncaught exception - shutting down for safety:', err);
+  io.close();
+  server.close(() => process.exit(1));
+  setTimeout(() => process.exit(1), 5_000).unref();
+});

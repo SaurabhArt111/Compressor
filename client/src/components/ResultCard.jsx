@@ -44,6 +44,11 @@ export default function ResultCard({ jobId, file }) {
             </div>
           </div>
         )}
+        {file.status === 'done' && result && (
+          <span className="preview-original-size">
+            Original: {formatBytes(result.originalSize)}
+          </span>
+        )}
       </div>
 
       <div className="result-body">
@@ -122,6 +127,10 @@ export default function ResultCard({ jobId, file }) {
                 <div className="reduction-label">size reduction</div>
               </div>
             </div>
+
+            {isPdf && result.note && (
+              <div className="result-note">{result.note}</div>
+            )}
 
             <div className="result-actions">
               <a className="btn btn-sm" href={downloadFileUrl(jobId, file.id)} download>

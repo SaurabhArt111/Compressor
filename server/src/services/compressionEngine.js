@@ -140,6 +140,71 @@ function displayDimensions(meta) {
     : { width: meta.width, height: meta.height };
 }
 
+// How large a probe encode is allowed to be (longest edge, in pixels) when
+// estimating what resolution a huge source image will need. Large enough
+// for a stable bytes-per-pixel estimate, small enough to encode in a
+// fraction of a second even for AVIF.
+const PROBE_MAX_DIMENSION = 1000;
+
+/**
+ * For genuinely large sources (a 300-800MB, multi-hundred-megapixel photo
+ * is exactly what this tool targets), naively starting the resolution
+ * ladder at 100% and binary-searching quality there - only stepping down
+ * if that fails - means doing up to ~7 full-resolution encodes *per ladder
+ * step* before ever reaching a resolution that actually fits. For a
+ * 500-megapixel image that's the difference between one huge encode and
+ * dozens of them: minutes of wasted work (and wasted peak memory) per file.
+ *
+ * Instead, encode one cheap small probe (shrunk to at most
+ * PROBE_MAX_DIMENSION on its longest edge - libvips shrinks during decode,
+ * so this stays fast regardless of how large the source file is) to learn
+ * this image's real bytes-per-pixel at the given quality/format, then
+ * extrapolate: since encoded size scales roughly with pixel count at a
+ * fixed quality, `estimatedScale ~= sqrt(target / estimatedFullResSize)`.
+ * The binary search then starts from that estimate (with one ladder step
+ * of headroom, in case the estimate runs a little optimistic) instead of
+ * from scratch at full resolution - the existing ladder fallback still
+ * covers the rest if the estimate undershoots, so this can only save time,
+ * never produce a worse result.
+ */
+async function estimateStartingStepIndex({
+  filePath, format, quality, targetBytes, originalWidth, originalHeight,
+}) {
+  const longestEdge = Math.max(originalWidth, originalHeight);
+  if (longestEdge <= PROBE_MAX_DIMENSION) return 0; // already small; nothing to estimate
+
+  let estimatedScale;
+  try {
+    let pipeline = sharp(filePath, { sequentialRead: true, limitInputPixels: false })
+      .rotate()
+      .resize({ width: PROBE_MAX_DIMENSION, height: PROBE_MAX_DIMENSION, fit: 'inside', withoutEnlargement: true });
+    pipeline = applyFormat(pipeline, format, quality);
+    const { data, info } = await pipeline.toBuffer({ resolveWithObject: true });
+
+    const probePixels = info.width * info.height;
+    const bytesPerPixel = data.length / probePixels;
+    const estimatedFullResBytes = bytesPerPixel * originalWidth * originalHeight;
+    if (estimatedFullResBytes <= targetBytes) return 0; // full resolution is plausibly fine
+
+    const smallestLadderScale = RESOLUTION_LADDER[RESOLUTION_LADDER.length - 1];
+    estimatedScale = Math.min(1, Math.max(smallestLadderScale, Math.sqrt(targetBytes / estimatedFullResBytes)));
+  } catch {
+    return 0; // if the probe itself fails for any reason, fall back to the full, safe ladder
+  }
+
+  // RESOLUTION_LADDER is sorted descending (1, 0.9, ..., 0.4). Find the
+  // first (largest) step at or below the estimate...
+  let index = RESOLUTION_LADDER.length - 1;
+  for (let i = 0; i < RESOLUTION_LADDER.length; i += 1) {
+    if (RESOLUTION_LADDER[i] <= estimatedScale) { index = i; break; }
+  }
+  // ...then back off by one step as headroom, since this is an estimate,
+  // not a guarantee: better to try one resolution higher than necessary
+  // (cheap - the ladder immediately falls through if it's still too big)
+  // than to start below where a decent-quality encode would have fit.
+  return Math.max(0, index - 1);
+}
+
 /**
  * Compress a single image to fit under targetBytes while maximizing visual
  * quality:
@@ -200,7 +265,11 @@ export async function compressImage({
     };
   }
 
-  for (let step = 0; step < RESOLUTION_LADDER.length; step += 1) {
+  const startStepIndex = await estimateStartingStepIndex({
+    filePath, format, quality: qualityCeiling, targetBytes, originalWidth, originalHeight,
+  });
+
+  for (let step = startStepIndex; step < RESOLUTION_LADDER.length; step += 1) {
     const scale = RESOLUTION_LADDER[step];
     const width = Math.max(1, Math.round(originalWidth * scale));
     const height = Math.max(1, Math.round(originalHeight * scale));
@@ -210,7 +279,7 @@ export async function compressImage({
       filePath, format, targetBytes,
       width, height, originalWidth, originalHeight,
       qMin: qualityFloor, qMax: qualityCeiling,
-      onIteration: (i, total) => onProgress?.(scale, i, total, step, RESOLUTION_LADDER.length),
+      onIteration: (i, total) => onProgress?.(scale, i, total, step - startStepIndex, RESOLUTION_LADDER.length - startStepIndex),
       isCancelled,
     });
 

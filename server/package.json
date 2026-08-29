@@ -7,10 +7,11 @@
   "scripts": {
     "dev": "nodemon --watch src src/index.js",
     "start": "node src/index.js",
-    "test": "npm run test:engine && npm run test:pdf && npm run test:zip && npm run test:api",
+    "test": "npm run test:engine && npm run test:pdf && npm run test:zip && npm run test:labels && npm run test:api",
     "test:engine": "node src/services/__test__/compressionEngine.test.js",
     "test:pdf": "node src/services/__test__/pdfCompressionEngine.test.js",
     "test:zip": "node src/services/__test__/zipExtractor.test.js",
+    "test:labels": "node src/utils/__test__/labels.test.js",
     "test:api": "node src/__test__/api.test.mjs"
   },
   "dependencies": {

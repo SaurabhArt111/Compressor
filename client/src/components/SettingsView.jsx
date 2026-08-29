@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { useSettings } from '../context/SettingsContext';
+import { fetchServerConfig } from '../utils/api';
 
 function Toggle({ on, onChange, label }) {
   return (
@@ -24,6 +25,13 @@ function Toggle({ on, onChange, label }) {
 export default function SettingsView() {
   const { settings, updateSettings, resetSettings } = useSettings();
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [maxServerConcurrency, setMaxServerConcurrency] = useState(6);
+
+  useEffect(() => {
+    fetchServerConfig()
+      .then((cfg) => { if (cfg.maxServerConcurrency) setMaxServerConcurrency(cfg.maxServerConcurrency); })
+      .catch(() => {}); // keep the fallback bound if the server can't be reached
+  }, []);
 
   return (
     <div style={{ maxWidth: 640 }}>
@@ -77,15 +85,18 @@ export default function SettingsView() {
             <input
               type="range"
               min="1"
-              max="6"
-              value={settings.concurrency}
+              max={maxServerConcurrency}
+              value={Math.min(settings.concurrency, maxServerConcurrency)}
               onChange={(e) => updateSettings({ concurrency: Number(e.target.value) })}
             />
-            <span className="range-value mono">{settings.concurrency}</span>
+            <span className="range-value mono">{Math.min(settings.concurrency, maxServerConcurrency)}</span>
           </div>
           <span className="settings-field-hint">
-            How many images are compressed in parallel. Lower this if you're processing very large (300MB+) files on a
-            machine with limited RAM; the server also enforces its own hard ceiling regardless of this value.
+            How many files are compressed in parallel. This server allows up to {maxServerConcurrency} at once
+            (set via <code>MAX_SERVER_CONCURRENCY</code>). Higher is faster on a batch of many small files, but each
+            very large file (300MB+) already uses significant memory on its own, so if you're processing several
+            huge files together, a lower value avoids competing for RAM and swapping, which is slower overall than
+            just queuing them.
           </span>
         </div>
 

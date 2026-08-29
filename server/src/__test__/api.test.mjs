@@ -147,6 +147,7 @@ async function run() {
     assert(uploadBody.files.some((f) => f.originalName === 'document.pdf' && f.kind === 'pdf'), 'the uploaded PDF is present and tagged kind=pdf');
     assert(uploadBody.files.some((f) => f.relativePath === 'photos/batch/a.jpg'), 'a zip-extracted file keeps its internal folder structure, namespaced under the archive name');
     assert(!uploadBody.files.some((f) => f.originalName === 'readme.txt'), 'the unsupported .txt file inside the zip was not queued');
+    assert(uploadBody.label === 'small', 'mixed batch with no single shared folder derives its label from the first uploaded file\'s name ("small.jpg" -> "small")');
     const jobId = uploadBody.id;
 
     // --- 2. Start compression with an aggressive-but-achievable target. ---
@@ -216,8 +217,9 @@ async function run() {
     const treeRes = await fetch(`${baseUrl}/api/files/tree`);
     const tree = await treeRes.json();
     assert(treeRes.status === 200, 'file tree responds 200');
-    const jobNode = tree.children.find((c) => c.name === jobId);
-    assert(!!jobNode, 'the job shows up as a top-level folder in the uploads tree');
+    const jobNode = tree.children.find((c) => c.path === jobId);
+    assert(!!jobNode, 'the job shows up as a top-level folder in the uploads tree, addressed by its real (unique) job id path');
+    assert(jobNode.name === 'small', 'the job\'s *display name* in the tree is its derived label ("small"), not the opaque job id');
     assert(jobNode.active === false, 'a finished job is reported as not active (safe to delete)');
     assert(tree.totalSize > 0, 'reported total size is greater than zero');
 
@@ -254,7 +256,110 @@ async function run() {
     const treeAfterClear = await (await fetch(`${baseUrl}/api/files/tree`)).json();
     assert(treeAfterClear.children.length === 0, 'uploads tree is empty after clear-all');
 
-    // --- 6. A too-small / bogus job id behaves like "not found", not a crash. ---
+    // --- 6. Folder-name labeling: a genuine folder upload uses the real
+    //     folder's name (not a generated one), and its full hierarchy is
+    //     preserved and independently navigable. ---
+    console.log('\nUploading a real folder structure (simulated via path-carrying filenames, same as a browser folder-drop)...');
+    const folderForm = new FormData();
+    folderForm.append('files', new File([await makeJpeg('small')], 'x.jpg'), 'Shoot/one.jpg');
+    folderForm.append('files', new File([await makeJpeg('small')], 'x.jpg'), 'Shoot/edits/two.jpg');
+    folderForm.append('files', new File([await makeJpeg('small')], 'x.jpg'), 'Shoot/edits/final/three.jpg');
+    const folderUploadRes = await fetch(`${baseUrl}/api/upload`, { method: 'POST', body: folderForm });
+    const folderUploadBody = await folderUploadRes.json();
+    assert(folderUploadRes.status === 201, `folder upload responds 201 (got ${folderUploadRes.status})`);
+    assert(folderUploadBody.label === 'Shoot', 'a folder upload\'s label is the real folder name, not a generated one');
+    assert(folderUploadBody.files.some((f) => f.relativePath === 'Shoot/edits/final/three.jpg'), 'deeply nested subfolder structure is preserved exactly, not flattened');
+    const folderJobId = folderUploadBody.id;
+
+    const folderTree = await (await fetch(`${baseUrl}/api/files/tree`)).json();
+    const folderJobNode = folderTree.children.find((c) => c.path === folderJobId);
+    assert(folderJobNode?.name === 'Shoot', 'the Files page shows the real folder name for this job');
+    function findByPath(node, targetPath) {
+      if (node.path === targetPath) return node;
+      if (node.type !== 'dir') return null;
+      for (const child of node.children) {
+        const hit = findByPath(child, targetPath);
+        if (hit) return hit;
+      }
+      return null;
+    }
+    const originalDir = findByPath(folderJobNode, `${folderJobId}/original`);
+    const editsDir = findByPath(originalDir, `${folderJobId}/original/Shoot/edits`);
+    const finalDir = findByPath(editsDir, `${folderJobId}/original/Shoot/edits/final`);
+    assert(!!editsDir && editsDir.children.some((c) => c.name === 'two.jpg'), 'a first-level subfolder is independently navigable and contains exactly its own file');
+    assert(!!finalDir && finalDir.children.some((c) => c.name === 'three.jpg'), 'a deeply nested subfolder is independently navigable without anything from sibling folders mixed in');
+    assert(editsDir.children.filter((c) => c.type === 'file').length === 1, 'the "edits" folder contains only its own direct file (the nested "final" subfolder is separate, not flattened in)');
+
+    // --- 7. ZIP-only upload: the label is the ZIP's own name. ---
+    console.log('\nUploading a ZIP by itself...');
+    const soloZipBytes = await makeZip([{ name: 'only-entry.jpg', data: await makeJpeg('small') }]);
+    const zipForm = new FormData();
+    zipForm.append('files', new File([soloZipBytes], 'VacationPhotos.zip', { type: 'application/zip' }));
+    const zipOnlyRes = await fetch(`${baseUrl}/api/upload`, { method: 'POST', body: zipForm });
+    const zipOnlyBody = await zipOnlyRes.json();
+    assert(zipOnlyBody.label === 'VacationPhotos', 'a ZIP-only upload\'s label is the ZIP\'s own filename');
+    const zipOnlyJobId = zipOnlyBody.id;
+
+    // --- 8. Isolation: two uploads that derive the *same* label never mix
+    //     their files, even though they may display identically. ---
+    console.log('\nUploading a second, unrelated folder that happens to share the first one\'s name...');
+    const secondShootForm = new FormData();
+    secondShootForm.append('files', new File([await makeJpeg('small')], 'x.jpg'), 'Shoot/different-photo.jpg');
+    const secondShootRes = await fetch(`${baseUrl}/api/upload`, { method: 'POST', body: secondShootForm });
+    const secondShootBody = await secondShootRes.json();
+    assert(secondShootBody.label === 'Shoot', 'the second upload derives the identical label "Shoot"');
+    assert(secondShootBody.id !== folderJobId, 'but it gets a distinct, unique job id');
+    const treeWithBoth = await (await fetch(`${baseUrl}/api/files/tree`)).json();
+    const shootNodes = treeWithBoth.children.filter((c) => c.name === 'Shoot');
+    assert(shootNodes.length === 2, 'both same-named uploads appear as two separate top-level entries, never merged into one');
+    const secondShootNode = treeWithBoth.children.find((c) => c.path === secondShootBody.id);
+    assert(
+      !findByPath(secondShootNode, `${secondShootBody.id}/original/Shoot/one.jpg`),
+      'the second "Shoot" upload does not contain any file from the first one',
+    );
+
+    // --- 9. Rename: top-level renames the label only; nested renames the
+    //     real file, both scoped to that job's own directory. ---
+    console.log('\nRenaming a project label and a nested file...');
+    const renameLabelRes = await fetch(`${baseUrl}/api/files/rename`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: folderJobId, newName: 'Renamed Shoot' }),
+    });
+    assert(renameLabelRes.status === 200, 'renaming a top-level (job) node succeeds');
+    const treeAfterLabelRename = await (await fetch(`${baseUrl}/api/files/tree`)).json();
+    const renamedNode = treeAfterLabelRename.children.find((c) => c.path === folderJobId);
+    assert(renamedNode?.name === 'Renamed Shoot', 'the label is updated in the tree');
+    assert(
+      !!findByPath(renamedNode, `${folderJobId}/original/Shoot/one.jpg`),
+      'renaming the label never touches the physical files - the original folder structure and job id are untouched',
+    );
+
+    const renameFileRes = await fetch(`${baseUrl}/api/files/rename`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: `${folderJobId}/original/Shoot/one.jpg`, newName: 'renamed-one.jpg' }),
+    });
+    assert(renameFileRes.status === 200, 'renaming a nested file succeeds');
+    const treeAfterFileRename = await (await fetch(`${baseUrl}/api/files/tree`)).json();
+    const renamedNodeAfter = treeAfterFileRename.children.find((c) => c.path === folderJobId);
+    assert(
+      !!findByPath(renamedNodeAfter, `${folderJobId}/original/Shoot/renamed-one.jpg`),
+      'the nested file appears under its new name',
+    );
+    assert(
+      !findByPath(renamedNodeAfter, `${folderJobId}/original/Shoot/one.jpg`),
+      'the nested file no longer appears under its old name',
+    );
+
+    const renameConflictRes = await fetch(`${baseUrl}/api/files/rename`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: `${folderJobId}/original/Shoot/edits/two.jpg`, newName: 'renamed-one.jpg' }),
+    });
+    assert(renameConflictRes.status === 200, 'renaming a same-named file in a *different* folder succeeds (no false collision across folders)');
+
+    // --- 10. A too-small / bogus job id behaves like "not found", not a crash. ---
     const missingRes = await fetch(`${baseUrl}/api/compress/does-not-exist`);
     assert(missingRes.status === 404, 'fetching a nonexistent job returns 404');
   } finally {

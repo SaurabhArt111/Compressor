@@ -191,6 +191,36 @@ async function run() {
     assert(Buffer.compare(result5.buffer, originalBytes) === 0, 'unchanged result is byte-for-byte identical to the source');
   }
 
+  // --- Test 6: large source needing heavy downscaling should skip ahead
+  // via the resolution probe instead of exhaustively trying every larger
+  // step at full/near-full resolution first. This is a direct regression
+  // test for the real-world complaint that a single huge, high-megapixel
+  // source could take 15-20 minutes: correctness (still reaches target,
+  // still returns a valid image) matters most here, but the wall-clock
+  // budget also guards against silently regressing back to the exhaustive
+  // from-scratch ladder walk.
+  console.log('\nBonus: large source + aggressive target should engage the resolution probe');
+  const hugePhotoPath = path.join(FIXTURE_DIR, 'huge-photo.tiff');
+  await makePhotoLikeTiff(hugePhotoPath, 9000, 6000); // 54 megapixels
+  const hugeStat = await fs.stat(hugePhotoPath);
+  console.log(`  huge-photo.tiff: ${mb(hugeStat.size)} (9000x6000, 54MP)`);
+  const t1 = Date.now();
+  // A target aggressive enough that quality alone at full/near-full
+  // resolution cannot reach it, forcing real downscaling.
+  const result6 = await compressImage({
+    filePath: hugePhotoPath,
+    targetBytes: 800 * 1024, // 800KB - tiny relative to a 54MP source
+    formatPref: 'auto',
+  });
+  const elapsed6 = (Date.now() - t1) / 1000;
+  console.log(`  took ${elapsed6.toFixed(1)}s`);
+  console.log(`  ${mb(result6.originalSize)} -> ${mb(result6.compressedSize)} | format=${result6.format} quality=${result6.quality} scale=${result6.scale} ${result6.width}x${result6.height} targetReached=${result6.targetReached}`);
+  assert(result6.compressedSize <= 800 * 1024 || result6.targetReached === false, 'result stays at/under target (or honestly reports it could not)');
+  assert(result6.compressedSize < result6.originalSize, 'still returns something meaningfully smaller than the 54MP original');
+  assert(result6.scale < 1, 'an aggressive target on a 54MP source actually engages resolution reduction');
+  assert(result6.width < result6.originalWidth && result6.height < result6.originalHeight, 'output dimensions are genuinely reduced from the original');
+  assert(elapsed6 < 90, `completes in well under a naive from-scratch full-ladder walk (took ${elapsed6.toFixed(1)}s)`);
+
   console.log(`\n${passed} passed, ${failures} failed.\n`);
   if (failures > 0) process.exitCode = 1;
 }

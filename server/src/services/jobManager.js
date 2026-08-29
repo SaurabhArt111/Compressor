@@ -26,6 +26,7 @@ export function createJob() {
   const job = {
     id,
     status: 'uploading', // uploading -> ready -> processing -> done
+    label: null,
     createdAt: Date.now(),
     startedAt: null,
     finishedAt: null,
@@ -90,6 +91,7 @@ export function serializeJob(job) {
   return {
     id: job.id,
     status: job.status,
+    label: job.label,
     createdAt: job.createdAt,
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,
@@ -181,6 +183,7 @@ async function processFile(job, entry, settings) {
       pageCount: result.pageCount ?? undefined,
       imagesFound: result.imagesFound ?? undefined,
       imagesCompressed: result.imagesCompressed ?? undefined,
+      note: result.note ?? undefined,
     };
     emit(job.id, 'file:done', { fileId: entry.id, file: publicFile(entry) });
   } catch (err) {

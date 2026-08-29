@@ -153,6 +153,10 @@ export default function App() {
       }
     },
     job_cancelling: () => setCancelling(true),
+    resync: () => {
+      if (!job?.id) return;
+      fetchJob(job.id).then(setJob).catch(() => {});
+    },
   });
 
   const totalQueuedBytes = useMemo(

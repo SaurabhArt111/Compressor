@@ -9,7 +9,9 @@ import {
 } from '../config.js';
 import { createJob, addFileToJob, serializeJob } from '../services/jobManager.js';
 import { extractZipIntoJob } from '../services/zipExtractor.js';
+import { writeJobMeta } from '../services/jobMeta.js';
 import { sanitizeRelativePath } from '../utils/paths.js';
+import { deriveUploadLabel, sanitizeLabel } from '../utils/labels.js';
 
 const router = express.Router();
 
@@ -131,6 +133,16 @@ router.post(
       });
       return;
     }
+
+    // A human-readable project name for this batch (shown in the Files
+    // page instead of the opaque internal job id): the real folder name
+    // for a folder/ZIP upload, or the first uploaded file's name for a
+    // loose handful of files. Persisted alongside the job's files so it
+    // survives a server restart, independent of the in-memory job registry.
+    const queuedRelativePaths = Array.from(job.files.values()).map((f) => f.relativePath);
+    const label = sanitizeLabel(deriveUploadLabel(queuedRelativePaths, files[0]?.__relativePath));
+    job.label = label;
+    await writeJobMeta(job.id, { label, createdAt: job.createdAt }).catch(() => {});
 
     job.status = 'ready';
     const serialized = serializeJob(job);

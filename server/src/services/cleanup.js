@@ -27,10 +27,22 @@ export async function sweepOldUploads(isJobActive) {
         try {
           const stat = await fs.stat(dirPath);
           if (now - stat.mtimeMs > JOB_RETENTION_MS) {
-            await fs.rm(dirPath, { recursive: true, force: true });
+            // Retry logic for locked files (common on Windows)
+            for (let attempt = 0; attempt < 5; attempt++) {
+              try {
+                await fs.rm(dirPath, { recursive: true, force: true });
+                break;
+              } catch (err) {
+                if (err.code === 'EBUSY' && attempt < 4) {
+                  await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+                  continue;
+                }
+                throw err;
+              }
+            }
           }
         } catch {
-          // ignore races where the directory disappeared mid-sweep
+          // ignore races where the directory disappeared mid-sweep or other errors
         }
       }),
   );

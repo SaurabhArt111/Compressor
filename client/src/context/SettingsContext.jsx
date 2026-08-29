@@ -6,7 +6,7 @@ export const DEFAULT_SETTINGS = {
   targetPreset: '10', // '10' | '12' | 'custom'
   customTargetMB: 15,
   format: 'auto', // auto | jpeg | webp | avif | png
-  concurrency: 2,
+  concurrency: 3,
   qualityFloor: 35,
   qualityCeiling: 100,
   autoDownloadZip: false,

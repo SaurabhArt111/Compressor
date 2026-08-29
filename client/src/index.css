@@ -264,10 +264,13 @@ button {
   border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  padding: 46px 32px;
+  padding: 36px 32px;
   text-align: center;
   transition: border-color 0.18s ease, background 0.18s ease, transform 0.12s ease;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .dropzone.dragging {
@@ -285,19 +288,20 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 18px;
+  margin: 0 auto 12px;
   color: var(--accent);
 }
 
 .dropzone h2 {
   font-size: 18px;
-  margin-bottom: 6px;
+  margin: 6px;
 }
 
 .dropzone p {
+  width: calc(100% - 180px);
   color: var(--text-secondary);
   font-size: 13.5px;
-  margin: 0 0 22px;
+  margin: 15px;
 }
 
 .dropzone-actions {
@@ -308,7 +312,7 @@ button {
 }
 
 .dropzone-hint {
-  margin-top: 20px;
+  margin: 20px;
   color: var(--text-tertiary);
   font-size: 11.5px;
 }
@@ -742,6 +746,14 @@ button {
   overflow: hidden;
 }
 
+.result-preview.preview-original-size {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .compare-slider {
   position: absolute;
   inset: 0;
@@ -807,6 +819,21 @@ button {
 .compare-label.after {
   right: 8px;
 }
+
+.preview-original-size {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(16, 18, 20, 0.72);
+  color: var(--text-primary);
+  backdrop-filter: blur(2px);
+}
+
 
 .result-preview .placeholder {
   position: absolute;
@@ -1044,6 +1071,15 @@ button {
   border-radius: var(--radius-sm);
 }
 
+.result-note {
+  padding: 10px 12px;
+  background: var(--warn-wash);
+  color: var(--warn);
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: var(--radius-sm);
+}
+
 /* =========================================================================
    QUALITY DIAL (signature element)
    ========================================================================= */
@@ -1071,7 +1107,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 30px 0 14px;
+  margin: 10px 0 14px;
   flex-wrap: wrap;
   gap: 10px;
 }
@@ -1410,6 +1446,31 @@ button {
   white-space: nowrap;
   min-width: 96px;
   text-align: right;
+}
+
+.tree-row-rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tree-rename-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: var(--surface-2);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+.tree-rename-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-wash);
 }
 
 /* =========================================================================
