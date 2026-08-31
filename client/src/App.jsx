@@ -212,23 +212,25 @@ export default function App() {
                       </div>
                       <FileQueueList items={queuedItems} onRemove={handleRemove} disabled={uploading} />
 
-                      <ControlBar
-                        settings={settings}
-                        updateSettings={updateSettings}
-                        isProcessing={uploading}
-                        canCompress={queuedItems.length > 0 && !uploading}
-                        onCompress={handleCompress}
-                        onCancel={() => {}}
-                      />
+                      <div className="sticky-controls">
+                        <ControlBar
+                          settings={settings}
+                          updateSettings={updateSettings}
+                          isProcessing={uploading}
+                          canCompress={queuedItems.length > 0 && !uploading}
+                          onCompress={handleCompress}
+                          onCancel={() => {}}
+                        />
 
-                      {uploading && (
-                        <div className="progress-summary">
-                          <div className="progress-track">
-                            <div className="progress-fill" style={{ width: `${Math.round(uploadProgress * 100)}%` }} />
+                        {uploading && (
+                          <div className="progress-summary">
+                            <div className="progress-track">
+                              <div className="progress-fill" style={{ width: `${Math.round(uploadProgress * 100)}%` }} />
+                            </div>
+                            <span className="count">Uploading… {Math.round(uploadProgress * 100)}%</span>
                           </div>
-                          <span className="count">Uploading… {Math.round(uploadProgress * 100)}%</span>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </>
                   )}
                 </>
@@ -236,34 +238,44 @@ export default function App() {
 
               {job && (
                 <>
-                  <ControlBar
-                    settings={settings}
-                    updateSettings={updateSettings}
-                    isProcessing={isProcessing}
-                    canCompress={false}
-                    onCompress={() => {}}
-                    onCancel={handleCancel}
-                  />
+                    <ControlBar
+                      settings={settings}
+                      updateSettings={updateSettings}
+                      isProcessing={isProcessing}
+                      canCompress={false}
+                      onCompress={() => {}}
+                      onCancel={handleCancel}
+                    />
+                  <div className="sticky-controls">
 
-                  <ProgressSummary
-                    total={job.files.length}
-                    completed={completedCount}
-                    cancelling={cancelling}
-                    durationMs={job.durationMs ?? (job.startedAt ? clock - job.startedAt : 0)}
-                  />
+                    <ProgressSummary
+                      total={job.files.length}
+                      completed={completedCount}
+                      cancelling={cancelling}
+                      durationMs={job.durationMs ?? (job.startedAt ? clock - job.startedAt : 0)}
+                    />
+                  </div>
+
+                  {hasFinishedJob && (
+                    <div className="completion-banner" role="status" aria-live="polite">
+                      <div className="completion-banner__content">
+                        <span className="summary-pill success">Batch complete</span>
+                        <div>
+                          <h3>Compression finished</h3>
+                          <p>Your files are ready to review or download.</p>
+                        </div>
+                      </div>
+
+                      <button type="button" className="btn btn-primary" onClick={handleStartNewBatch}>
+                        <RefreshCcw size={14} /> Start a new batch
+                      </button>
+                    </div>
+                  )}
 
                   <ResultsGrid jobId={job.id} files={job.files} showZipAction={hasFinishedJob} onRetryFile={handleRetryFile} />
 
                   {/* Hidden anchor used for the "auto-download ZIP" setting */}
                   <a ref={zipAnchorRef} href={downloadZipUrl(job.id)} download style={{ display: 'none' }} aria-hidden="true">zip</a>
-
-                  {hasFinishedJob && (
-                    <div style={{ marginTop: 22 }}>
-                      <button type="button" className="btn" onClick={handleStartNewBatch}>
-                        <RefreshCcw size={14} /> Start a new batch
-                      </button>
-                    </div>
-                  )}
                 </>
               )}
             </>

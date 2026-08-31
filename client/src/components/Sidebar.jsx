@@ -2,8 +2,8 @@ import { Aperture, ImagePlus, History, SlidersHorizontal, FolderOpen } from 'luc
 
 const NAV_ITEMS = [
   { id: 'compress', label: 'Compress', icon: ImagePlus },
-  { id: 'files', label: 'Files', icon: FolderOpen },
   { id: 'history', label: 'History', icon: History },
+  { id: 'files', label: 'Files', icon: FolderOpen },
   { id: 'settings', label: 'Settings', icon: SlidersHorizontal },
 ];
 
