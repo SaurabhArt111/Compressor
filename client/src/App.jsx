@@ -11,7 +11,9 @@ import SettingsView from './components/SettingsView';
 import FileManagerView from './components/FileManagerView';
 import { useSettings } from './context/SettingsContext';
 import { useJobSocket } from './hooks/useSocket';
-import { uploadFiles, startCompression, cancelJob, downloadZipUrl, fetchJob } from './utils/api';
+import {
+  uploadFiles, startCompression, cancelJob, retryFile, downloadZipUrl, fetchJob,
+} from './utils/api';
 import { formatBytes } from './utils/format';
 
 let idCounter = 0;
@@ -118,6 +120,16 @@ export default function App() {
     } catch (err) {
       setError(err.message);
       setCancelling(false);
+    }
+  };
+
+  const handleRetryFile = async (fileId) => {
+    if (!job) return;
+    setError('');
+    try {
+      await retryFile(job.id, fileId);
+    } catch (err) {
+      setError(err.message || 'Could not retry that file.');
     }
   };
 
@@ -240,7 +252,7 @@ export default function App() {
                     durationMs={job.durationMs ?? (job.startedAt ? clock - job.startedAt : 0)}
                   />
 
-                  <ResultsGrid jobId={job.id} files={job.files} showZipAction={hasFinishedJob} />
+                  <ResultsGrid jobId={job.id} files={job.files} showZipAction={hasFinishedJob} onRetryFile={handleRetryFile} />
 
                   {/* Hidden anchor used for the "auto-download ZIP" setting */}
                   <a ref={zipAnchorRef} href={downloadZipUrl(job.id)} download style={{ display: 'none' }} aria-hidden="true">zip</a>

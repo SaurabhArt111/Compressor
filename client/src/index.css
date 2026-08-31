@@ -1064,11 +1064,17 @@ button {
 }
 
 .result-error {
+  display: grid;
+  gap: 10px;
   padding: 12px 14px;
   background: var(--danger-wash);
   color: var(--danger);
   font-size: 12.5px;
   border-radius: var(--radius-sm);
+}
+
+.retry-btn {
+  justify-self: flex-start;
 }
 
 .result-note {
@@ -1119,6 +1125,40 @@ button {
 .section-header .meta {
   color: var(--text-tertiary);
   font-size: 12px;
+}
+
+.result-summary-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.summary-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.summary-pill.success {
+  background: var(--success-wash);
+  color: var(--success);
+}
+
+.summary-pill.danger {
+  background: var(--danger-wash);
+  color: var(--danger);
+}
+
+.summary-pill.neutral {
+  background: var(--surface-2);
+  color: var(--text-secondary);
 }
 
 /* =========================================================================

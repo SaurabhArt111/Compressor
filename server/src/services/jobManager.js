@@ -252,6 +252,36 @@ export async function startCompression(job, settings) {
   return summary;
 }
 
+export async function retryFile(job, fileId) {
+  const entry = job.files.get(fileId);
+  if (!entry || !job.settings) return null;
+  if (!['error', 'cancelled'].includes(entry.status)) return entry;
+
+  job.cancelled = false;
+  job.status = 'processing';
+  entry.error = null;
+  entry.result = null;
+  entry.progress = { percent: 1, stage: entry.kind === 'pdf' ? 'reading document' : 'reading image' };
+  entry.status = 'processing';
+  emit(job.id, 'file:start', { fileId: entry.id });
+
+  try {
+    await processFile(job, entry, job.settings);
+    const stillActive = Array.from(job.files.values()).some((f) => f.status === 'processing');
+    if (!stillActive) {
+      job.status = job.cancelled ? 'cancelled' : 'done';
+      job.finishedAt = Date.now();
+      job.durationMs = job.finishedAt - (job.startedAt ?? 0);
+    }
+    return entry;
+  } catch (err) {
+    entry.status = 'error';
+    entry.error = err.message || 'Compression failed';
+    emit(job.id, 'file:error', { fileId: entry.id, error: entry.error });
+    return entry;
+  }
+}
+
 export function cancelJob(job) {
   job.cancelled = true;
   emit(job.id, 'job:cancelling', { jobId: job.id });

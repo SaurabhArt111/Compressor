@@ -1,6 +1,6 @@
 import express from 'express';
 import {
-  getJob, serializeJob, startCompression, cancelJob,
+  getJob, serializeJob, startCompression, cancelJob, retryFile,
 } from '../services/jobManager.js';
 import {
   QUALITY_FLOOR_DEFAULT, QUALITY_CEILING_DEFAULT, DEFAULT_CONCURRENCY,
@@ -67,6 +67,37 @@ router.post('/:jobId/cancel', (req, res) => {
   }
   cancelJob(job);
   res.json({ cancelling: true });
+});
+
+router.post('/:jobId/files/:fileId/retry', async (req, res) => {
+  const job = getJob(req.params.jobId);
+  if (!job) {
+    res.status(404).json({ error: 'Job not found' });
+    return;
+  }
+
+  const file = job.files.get(req.params.fileId);
+  if (!file) {
+    res.status(404).json({ error: 'File not found' });
+    return;
+  }
+
+  if (!job.settings) {
+    res.status(400).json({ error: 'This job has no saved compression settings to retry with.' });
+    return;
+  }
+
+  if (!['error', 'cancelled'].includes(file.status)) {
+    res.status(409).json({ error: 'Only failed or cancelled files can be retried.' });
+    return;
+  }
+
+  try {
+    const retried = await retryFile(job, file.id);
+    res.json({ ok: true, fileId: retried?.id || file.id, status: retried?.status || file.status });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Could not retry that file.' });
+  }
 });
 
 export default router;

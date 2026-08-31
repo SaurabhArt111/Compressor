@@ -49,6 +49,13 @@ export async function cancelJob(jobId) {
   return res.json();
 }
 
+export async function retryFile(jobId, fileId) {
+  const res = await fetch(`/api/compress/${jobId}/files/${fileId}/retry`, { method: 'POST' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || 'Could not retry that file');
+  return body;
+}
+
 export async function fetchJob(jobId) {
   const res = await fetch(`/api/compress/${jobId}`);
   if (!res.ok) throw new Error('Job not found');

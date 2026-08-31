@@ -1,4 +1,6 @@
-import { Download, CheckCircle2, AlertTriangle, XCircle, Ban, ImageOff, LoaderCircle, FileText } from 'lucide-react';
+import {
+  Download, CheckCircle2, AlertTriangle, XCircle, Ban, ImageOff, LoaderCircle, FileText, RotateCcw,
+} from 'lucide-react';
 import CompareSlider from './CompareSlider';
 import QualityDial from './QualityDial';
 import { formatBytes, formatPercent, formatResolution } from '../utils/format';
@@ -13,7 +15,7 @@ function StatusBadge({ file }) {
   return <span className="badge badge-warn"><AlertTriangle size={12} /> Target not reached</span>;
 }
 
-export default function ResultCard({ jobId, file }) {
+export default function ResultCard({ jobId, file, onRetry }) {
   const { result } = file;
   const processingStage = file.progress?.stage || 'Working...';
   const isPdf = file.kind === 'pdf' || result?.format === 'pdf';
@@ -44,9 +46,9 @@ export default function ResultCard({ jobId, file }) {
             </div>
           </div>
         )}
-        {file.status === 'done' && result && (
+        {file.status !== 'error' && file.status !== 'cancelled' && file.originalSize != null && (
           <span className="preview-original-size">
-            Original: {formatBytes(result.originalSize)}
+            Original: {formatBytes(file.status === 'done' ? result?.originalSize ?? file.originalSize : file.originalSize)}
           </span>
         )}
       </div>
@@ -77,7 +79,14 @@ export default function ResultCard({ jobId, file }) {
         )}
 
         {file.status === 'error' && (
-          <div className="result-error">{file.error || 'Compression failed.'}</div>
+          <div className="result-error">
+            <div>{file.error || 'Compression failed.'}</div>
+            {onRetry && (
+              <button type="button" className="btn btn-sm btn-danger retry-btn" onClick={onRetry}>
+                <RotateCcw size={13} /> Retry
+              </button>
+            )}
+          </div>
         )}
 
         {file.status === 'done' && result && (
