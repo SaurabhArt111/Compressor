@@ -35,6 +35,7 @@ export default function App() {
 
   const isProcessing = job?.status === 'processing';
   const hasFinishedJob = job && (job.status === 'done' || job.status === 'cancelled');
+  const showGlobalProgress = !!job && job.status === 'processing';
 
   useEffect(() => {
     const savedJobId = window.localStorage.getItem(ACTIVE_JOB_KEY);
@@ -184,11 +185,21 @@ export default function App() {
       <div className="main-area">
         <div className="topbar">
           <div>
-            <h1>Compressor</h1>
-            <div className="subtitle">Batch-shrink images and PDFs to a target file size, on your own server.</div>
+            <h1>File Compressor</h1>
           </div>
           <span className="privacy-chip"><ShieldCheck size={13} /> Self-hosted — your files stay on your own server</span>
         </div>
+
+        {showGlobalProgress && (
+          <div className="global-progress">
+            <ProgressSummary
+              total={job.files.length}
+              completed={completedCount}
+              cancelling={cancelling}
+              durationMs={job.durationMs ?? (job.startedAt ? clock - job.startedAt : 0)}
+            />
+          </div>
+        )}
 
         <div className="view-container">
           {error && (
@@ -246,16 +257,6 @@ export default function App() {
                       onCompress={() => {}}
                       onCancel={handleCancel}
                     />
-                  <div className="sticky-controls">
-
-                    <ProgressSummary
-                      total={job.files.length}
-                      completed={completedCount}
-                      cancelling={cancelling}
-                      durationMs={job.durationMs ?? (job.startedAt ? clock - job.startedAt : 0)}
-                    />
-                  </div>
-
                   {hasFinishedJob && (
                     <div className="completion-banner" role="status" aria-live="polite">
                       <div className="completion-banner__content">

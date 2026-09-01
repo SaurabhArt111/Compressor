@@ -268,6 +268,21 @@ button {
   backdrop-filter: blur(4px);
 }
 
+.global-progress {
+  position: sticky;
+  top: 0;
+  z-index: 9940;
+  padding: 16px 40px;
+  background: rgba(16, 18, 20, 0.8);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(42, 50, 54, 0.8);
+}
+
+.global-progress .progress-summary {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
 /* =========================================================================
    DROPZONE
    ========================================================================= */
@@ -1179,16 +1194,20 @@ button {
 }
 
 .completion-banner {
+  position: sticky;
+  top: 0;
+  z-index: 9940;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 18px;
+  padding: 16px 40px;
   margin: 18px 0 20px;
   border: 1px solid rgba(127, 216, 88, 0.3);
   border-radius: var(--radius-lg);
   background: linear-gradient(135deg, rgba(127, 216, 88, 0.08), rgba(47, 209, 197, 0.04));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(4px);
 }
 
 .completion-banner__content {
