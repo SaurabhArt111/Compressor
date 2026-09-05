@@ -221,6 +221,80 @@ async function run() {
   assert(result6.width < result6.originalWidth && result6.height < result6.originalHeight, 'output dimensions are genuinely reduced from the original');
   assert(elapsed6 < 90, `completes in well under a naive from-scratch full-ladder walk (took ${elapsed6.toFixed(1)}s)`);
 
+  // --- Test 7: Maximum Width feature - landscape source gets capped and
+  // height is derived to preserve the original aspect ratio.
+  console.log('\n[Max width] 6000x4000 landscape capped to maxWidth=3000, target 2MB');
+  const landscapePath = path.join(FIXTURE_DIR, 'landscape-6000x4000.jpg');
+  await sharp(photoPath, { limitInputPixels: false }).resize(6000, 4000).jpeg({ quality: 96 }).toFile(landscapePath);
+  const result7 = await compressImage({
+    filePath: landscapePath,
+    targetBytes: 2 * 1024 * 1024,
+    maxWidth: 3000,
+  });
+  console.log(`  ${result7.originalWidth}x${result7.originalHeight} -> ${result7.width}x${result7.height} | ${mb(result7.compressedSize)} maxWidthApplied=${result7.maxWidthApplied}`);
+  assert(result7.width === 3000 && result7.height === 2000, 'landscape resized to exactly maxWidth with proportional height');
+  assert(result7.originalWidth === 6000 && result7.originalHeight === 4000, 'true original dimensions are still reported for display');
+  assert(result7.maxWidthApplied === true && result7.requestedMaxWidth === 3000, 'result flags that the width cap was applied');
+  assert(result7.compressedSize <= 2 * 1024 * 1024, 'resized+compressed result meets the 2MB target');
+
+  // --- Test 8: Maximum Width on a portrait source - width (not the longer
+  // edge) is what gets capped, exactly as specified.
+  console.log('\n[Max width] 4000x6000 portrait capped to maxWidth=3000');
+  const portraitPath = path.join(FIXTURE_DIR, 'portrait-4000x6000.jpg');
+  await sharp(photoPath, { limitInputPixels: false }).resize(4000, 6000).jpeg({ quality: 96 }).toFile(portraitPath);
+  const result8 = await compressImage({
+    filePath: portraitPath,
+    targetBytes: 2 * 1024 * 1024,
+    maxWidth: 3000,
+  });
+  console.log(`  ${result8.originalWidth}x${result8.originalHeight} -> ${result8.width}x${result8.height}`);
+  assert(result8.width === 3000 && result8.height === 4500, 'portrait resized to 3000x4500, preserving aspect ratio');
+
+  // --- Test 9: "Don't enlarge" - a maxWidth at or above the source's own
+  // width must never upscale, and should fall back to the plain unchanged
+  // fast path exactly like maxWidth being omitted entirely.
+  console.log('\n[Max width] maxWidth larger than the source must never upscale');
+  const smallPath = path.join(FIXTURE_DIR, 'small-for-maxwidth.jpg');
+  await sharp(photoPath, { limitInputPixels: false }).resize(800, 600).jpeg({ quality: 90 }).toFile(smallPath);
+  const smallBytes = await fs.readFile(smallPath);
+  const result9 = await compressImage({
+    filePath: smallPath,
+    targetBytes: 50 * 1024 * 1024,
+    maxWidth: 6000,
+  });
+  assert(result9.width === 800 && result9.height === 600, 'source dimensions are untouched when maxWidth exceeds them');
+  assert(result9.unchanged === true, 'behaves exactly like the no-maxWidth fast path when nothing needs to shrink');
+  assert(Buffer.compare(result9.buffer, smallBytes) === 0, 'bytes are byte-for-byte identical to the source');
+  assert(result9.maxWidthApplied === false, 'maxWidthApplied is false when the cap was a no-op');
+
+  // --- Test 10: maxWidth equal to the source's own width is also a no-op
+  // (">=", not just ">").
+  const result10 = await compressImage({
+    filePath: landscapePath,
+    targetBytes: 50 * 1024 * 1024,
+    maxWidth: 6000,
+  });
+  assert(result10.width === 6000 && result10.height === 4000 && result10.maxWidthApplied === false, 'maxWidth exactly equal to source width is a no-op ("Original" behavior)');
+
+  // --- Test 11: omitting maxWidth entirely (the plain "Original" case)
+  // must produce byte-for-byte the same result as before this feature
+  // existed - a direct regression guard against this change altering the
+  // existing compressor's default behavior.
+  const resultPlain = await compressImage({
+    filePath: landscapePath,
+    targetBytes: 2 * 1024 * 1024,
+  });
+  const resultExplicitOriginal = await compressImage({
+    filePath: landscapePath,
+    targetBytes: 2 * 1024 * 1024,
+    maxWidth: null,
+  });
+  assert(
+    resultPlain.compressedSize === resultExplicitOriginal.compressedSize
+      && resultPlain.width === resultExplicitOriginal.width,
+    'omitting maxWidth vs. explicitly passing null produce identical results ("Original" is truly a no-op)',
+  );
+
   console.log(`\n${passed} passed, ${failures} failed.\n`);
   if (failures > 0) process.exitCode = 1;
 }

@@ -5,6 +5,8 @@ const STORAGE_KEY = 'image-compressor:settings';
 export const DEFAULT_SETTINGS = {
   targetPreset: '10', // '10' | '12' | 'custom'
   customTargetMB: 15,
+  maxWidthPreset: 'original', // 'original' | '3000' | '4000' | '6000' | 'custom'
+  customMaxWidth: 3000,
   format: 'auto', // auto | jpeg | webp | avif | png
   concurrency: 3,
   qualityFloor: 35,
@@ -46,7 +48,18 @@ export function SettingsProvider({ children }) {
     return Number.isFinite(custom) && custom > 0 ? custom : 10;
   }, [settings.targetPreset, settings.customTargetMB]);
 
-  const value = { settings, updateSettings, resetSettings, targetMB };
+  // Resolves to `null` for "Original" (no dimension cap - the existing
+  // compressor's behavior, byte-for-byte), or a positive pixel width.
+  const maxWidthPx = useMemo(() => {
+    if (settings.maxWidthPreset === 'original') return null;
+    if (settings.maxWidthPreset === '3000') return 3000;
+    if (settings.maxWidthPreset === '4000') return 4000;
+    if (settings.maxWidthPreset === '6000') return 6000;
+    const custom = Number(settings.customMaxWidth);
+    return Number.isFinite(custom) && custom > 0 ? custom : null;
+  }, [settings.maxWidthPreset, settings.customMaxWidth]);
+
+  const value = { settings, updateSettings, resetSettings, targetMB, maxWidthPx };
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }
 

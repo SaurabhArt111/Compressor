@@ -147,6 +147,7 @@ async function processFile(job, entry, settings) {
         formatPref: settings.format,
         qualityFloor: settings.qualityFloor,
         qualityCeiling: settings.qualityCeiling,
+        maxWidth: settings.maxWidth ?? null,
         isCancelled: () => job.cancelled,
         onProgress: makeProgressReporter(job, entry),
       });
@@ -178,6 +179,8 @@ async function processFile(job, entry, settings) {
       targetReached: result.targetReached,
       alreadyUnderTarget: !!result.alreadyUnderTarget,
       unchanged: !!result.unchanged,
+      maxWidthApplied: !!result.maxWidthApplied,
+      requestedMaxWidth: result.requestedMaxWidth ?? null,
       outputRelativePath: outRelativePath,
       // PDF-only fields; undefined (and thus omitted from JSON) for images.
       pageCount: result.pageCount ?? undefined,

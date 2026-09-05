@@ -91,6 +91,11 @@ export default function ResultCard({ jobId, file, onRetry }) {
 
         {file.status === 'done' && result && (
           <>
+            {result.maxWidthApplied && (
+              <div className="result-note">
+                Resized to fit {result.requestedMaxWidth}px width (was {formatResolution(result.originalWidth, result.originalHeight)})
+              </div>
+            )}
             <div className="result-stats">
               <div className="stat-block">
                 <span className="stat-label">Original</span>
@@ -116,7 +121,7 @@ export default function ResultCard({ jobId, file, onRetry }) {
                   <div className="stat-block">
                     <span className="stat-label">Resolution</span>
                     <span className="stat-value">
-                      {result.scale < 1
+                      {(result.width !== result.originalWidth || result.height !== result.originalHeight)
                         ? `${formatResolution(result.width, result.height)} (was ${formatResolution(result.originalWidth, result.originalHeight)})`
                         : formatResolution(result.width, result.height)}
                     </span>

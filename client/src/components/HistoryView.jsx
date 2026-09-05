@@ -73,7 +73,10 @@ export default function HistoryView() {
               <td className="num">{formatBytes(r.totalOriginalSize)}</td>
               <td className="num">{formatBytes(r.totalCompressedSize)}</td>
               <td className="num">{formatPercent(r.averageReductionPercent)}</td>
-              <td className="num">{r.settings?.targetMB} MB</td>
+              <td className="num">
+                {r.settings?.targetMB} MB
+                {r.settings?.maxWidth ? <span style={{ color: 'var(--text-tertiary)' }}> · ≤{r.settings.maxWidth}px</span> : null}
+              </td>
               <td>{r.settings?.format}</td>
               <td>
                 <div className="history-actions">

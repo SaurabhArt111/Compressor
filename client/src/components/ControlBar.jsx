@@ -12,6 +12,7 @@ export default function ControlBar({
   settings, updateSettings, isProcessing, canCompress, onCompress, onCancel,
 }) {
   const setPreset = (preset) => updateSettings({ targetPreset: preset });
+  const setMaxWidthPreset = (preset) => updateSettings({ maxWidthPreset: preset });
 
   return (
     <div className="control-bar">
@@ -37,6 +38,34 @@ export default function ControlBar({
               onChange={(e) => updateSettings({ customTargetMB: e.target.value })}
             />
             <span>MB</span>
+          </div>
+        </div>
+      )}
+
+      <div className="control-group">
+        <span className="control-label">Maximum width</span>
+        <div className="segmented" role="group" aria-label="Maximum width preset">
+          <button type="button" className={settings.maxWidthPreset === 'original' ? 'active' : ''} onClick={() => setMaxWidthPreset('original')} disabled={isProcessing}>Original</button>
+          <button type="button" className={settings.maxWidthPreset === '3000' ? 'active' : ''} onClick={() => setMaxWidthPreset('3000')} disabled={isProcessing}>3000 px</button>
+          <button type="button" className={settings.maxWidthPreset === '4000' ? 'active' : ''} onClick={() => setMaxWidthPreset('4000')} disabled={isProcessing}>4000 px</button>
+          <button type="button" className={settings.maxWidthPreset === '6000' ? 'active' : ''} onClick={() => setMaxWidthPreset('6000')} disabled={isProcessing}>6000 px</button>
+          <button type="button" className={settings.maxWidthPreset === 'custom' ? 'active' : ''} onClick={() => setMaxWidthPreset('custom')} disabled={isProcessing}>Custom</button>
+        </div>
+      </div>
+
+      {settings.maxWidthPreset === 'custom' && (
+        <div className="control-group">
+          <span className="control-label">Custom width</span>
+          <div className="custom-size-input">
+            <input
+              type="number"
+              min="1"
+              step="10"
+              value={settings.customMaxWidth}
+              disabled={isProcessing}
+              onChange={(e) => updateSettings({ customMaxWidth: e.target.value })}
+            />
+            <span>px</span>
           </div>
         </div>
       )}

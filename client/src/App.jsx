@@ -31,7 +31,7 @@ export default function App() {
   const [clock, setClock] = useState(Date.now());
   const zipAnchorRef = useRef(null);
 
-  const { settings, updateSettings, targetMB } = useSettings();
+  const { settings, updateSettings, targetMB, maxWidthPx } = useSettings();
 
   const isProcessing = job?.status === 'processing';
   const hasFinishedJob = job && (job.status === 'done' || job.status === 'cancelled');
@@ -105,6 +105,7 @@ export default function App() {
         concurrency: settings.concurrency,
         qualityFloor: settings.qualityFloor,
         qualityCeiling: settings.qualityCeiling,
+        maxWidth: maxWidthPx,
       });
       setJob((prev) => (prev && prev.id === uploaded.id ? { ...prev, status: 'processing' } : prev));
     } catch (err) {

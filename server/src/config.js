@@ -13,7 +13,7 @@ function envInt(name, fallback) {
 export const NODE_ENV = process.env.NODE_ENV || 'development';
 export const IS_PRODUCTION = NODE_ENV === 'production';
 
-export const PORT = envInt('PORT', 5055);
+export const PORT = envInt('PORT', 5555);
 export const HOST = process.env.HOST || '0.0.0.0';
 
 // In production behind a specific frontend origin, set CORS_ORIGIN to a
@@ -61,6 +61,12 @@ export const QUALITY_ABSOLUTE_FLOOR = envInt('QUALITY_ABSOLUTE_FLOOR', 20);
 // 1 = original resolution; the engine stops as soon as a step succeeds.
 // Shared by the image engine and the PDF engine (for embedded images).
 export const RESOLUTION_LADDER = [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
+
+// Bounds for the "Maximum Width" dimension-reduction control (Custom
+// option). Generous enough to allow any real photo width while still
+// rejecting nonsense input (0, negative, absurdly large) from the API.
+export const MAX_WIDTH_MIN_PX = 16;
+export const MAX_WIDTH_MAX_PX = 20000;
 
 // Raster image formats compressed directly by Sharp.
 export const IMAGE_EXTENSIONS = new Set([

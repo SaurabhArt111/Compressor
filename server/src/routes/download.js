@@ -3,6 +3,7 @@ import path from 'node:path';
 import archiver from 'archiver';
 import sharp from 'sharp';
 import { getJob } from '../services/jobManager.js';
+import { sanitizeHeaderFilename, insertFilenameSuffix } from '../utils/paths.js';
 
 const router = express.Router();
 
@@ -18,8 +19,18 @@ router.get('/:jobId/zip', (req, res) => {
     return;
   }
 
+  // The ZIP itself is renamed to flag a batch-wide dimension reduction
+  // (e.g. "Premium_Laminates_3000px.zip") - but per the "never rename
+  // images inside the output" rule, every file *inside* the archive keeps
+  // its own original name/path untouched (see the archive.file() loop
+  // below, which uses each file's untouched compressedRelativePath).
+  const requestedMaxWidth = job.settings?.maxWidth || null;
+  const anyResized = requestedMaxWidth && doneFiles.some((f) => f.result?.maxWidthApplied);
+  const baseName = sanitizeHeaderFilename(job.label, `compressed-${job.id}`);
+  const zipName = anyResized ? insertFilenameSuffix(`${baseName}.zip`, `${requestedMaxWidth}px`) : `${baseName}.zip`;
+
   res.setHeader('Content-Type', 'application/zip');
-  res.setHeader('Content-Disposition', `attachment; filename="compressed-${job.id}.zip"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
 
   const archive = archiver('zip', { zlib: { level: 9 } });
   archive.on('error', (err) => {
@@ -47,7 +58,16 @@ router.get('/:jobId/:fileId', (req, res) => {
     res.status(404).json({ error: 'Compressed file not available.' });
     return;
   }
-  res.download(file.compressedPath, path.basename(file.compressedRelativePath));
+  // The file stored on disk (and inside any ZIP) always keeps its original
+  // name untouched - this suffix is applied only to the name offered for
+  // this single, ad-hoc download, so a resized copy can't silently
+  // overwrite an original of the same name sitting in the same downloads
+  // folder (e.g. "001.jpg" -> "001_3000px.jpg").
+  const baseFileName = path.basename(file.compressedRelativePath);
+  const downloadName = file.result?.maxWidthApplied && file.result?.requestedMaxWidth
+    ? insertFilenameSuffix(baseFileName, `${file.result.requestedMaxWidth}px`)
+    : baseFileName;
+  res.download(file.compressedPath, downloadName);
 });
 
 /**

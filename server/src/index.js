@@ -8,7 +8,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { Server as SocketIOServer } from 'socket.io';
 
-import { PORT, HOST, CLIENT_DIST, CORS_ORIGIN, IS_PRODUCTION, NODE_ENV, MAX_SERVER_CONCURRENCY, MAX_UPLOAD_BYTES, MAX_FILES_PER_JOB } from './config.js';
+import { PORT, HOST, CLIENT_DIST, CORS_ORIGIN, IS_PRODUCTION, NODE_ENV, MAX_SERVER_CONCURRENCY, MAX_UPLOAD_BYTES, MAX_FILES_PER_JOB, MAX_WIDTH_MIN_PX, MAX_WIDTH_MAX_PX } from './config.js';
 import uploadRouter from './routes/upload.js';
 import compressRouter from './routes/compress.js';
 import downloadRouter from './routes/download.js';
@@ -43,6 +43,8 @@ app.get('/api/config', (req, res) => res.json({
   maxServerConcurrency: MAX_SERVER_CONCURRENCY,
   maxUploadBytes: MAX_UPLOAD_BYTES,
   maxFilesPerJob: MAX_FILES_PER_JOB,
+  maxWidthMinPx: MAX_WIDTH_MIN_PX,
+  maxWidthMaxPx: MAX_WIDTH_MAX_PX,
 }));
 app.use('/api/upload', uploadRouter);
 app.use('/api/compress', compressRouter);

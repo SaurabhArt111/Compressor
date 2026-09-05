@@ -26,11 +26,15 @@ export default function SettingsView() {
   const { settings, updateSettings, resetSettings } = useSettings();
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [maxServerConcurrency, setMaxServerConcurrency] = useState(6);
+  const [maxWidthBounds, setMaxWidthBounds] = useState({ min: 16, max: 20000 });
 
   useEffect(() => {
     fetchServerConfig()
-      .then((cfg) => { if (cfg.maxServerConcurrency) setMaxServerConcurrency(cfg.maxServerConcurrency); })
-      .catch(() => {}); // keep the fallback bound if the server can't be reached
+      .then((cfg) => {
+        if (cfg.maxServerConcurrency) setMaxServerConcurrency(cfg.maxServerConcurrency);
+        if (cfg.maxWidthMinPx && cfg.maxWidthMaxPx) setMaxWidthBounds({ min: cfg.maxWidthMinPx, max: cfg.maxWidthMaxPx });
+      })
+      .catch(() => {}); // keep the fallback bounds if the server can't be reached
   }, []);
 
   return (
@@ -57,6 +61,34 @@ export default function SettingsView() {
               <span>MB</span>
             </div>
           )}
+        </div>
+
+        <div className="settings-field">
+          <span className="settings-field-label">Default maximum width</span>
+          <div className="segmented" style={{ width: 'fit-content' }}>
+            <button type="button" className={settings.maxWidthPreset === 'original' ? 'active' : ''} onClick={() => updateSettings({ maxWidthPreset: 'original' })}>Original</button>
+            <button type="button" className={settings.maxWidthPreset === '3000' ? 'active' : ''} onClick={() => updateSettings({ maxWidthPreset: '3000' })}>3000 px</button>
+            <button type="button" className={settings.maxWidthPreset === '4000' ? 'active' : ''} onClick={() => updateSettings({ maxWidthPreset: '4000' })}>4000 px</button>
+            <button type="button" className={settings.maxWidthPreset === '6000' ? 'active' : ''} onClick={() => updateSettings({ maxWidthPreset: '6000' })}>6000 px</button>
+            <button type="button" className={settings.maxWidthPreset === 'custom' ? 'active' : ''} onClick={() => updateSettings({ maxWidthPreset: 'custom' })}>Custom</button>
+          </div>
+          {settings.maxWidthPreset === 'custom' && (
+            <div className="custom-size-input" style={{ width: 'fit-content', marginTop: 4 }}>
+              <input
+                type="number"
+                min={maxWidthBounds.min}
+                max={maxWidthBounds.max}
+                step="10"
+                value={settings.customMaxWidth}
+                onChange={(e) => updateSettings({ customMaxWidth: e.target.value })}
+              />
+              <span>px</span>
+            </div>
+          )}
+          <span className="settings-field-hint">
+            Resizes images down to this maximum width before compressing (aspect ratio preserved, images are never
+            upscaled). &quot;Original&quot; leaves dimensions untouched, exactly like this compressor always has.
+          </span>
         </div>
 
         <div className="settings-field">

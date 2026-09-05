@@ -206,16 +206,43 @@ async function estimateStartingStepIndex({
 }
 
 /**
+ * Resolves the "Maximum Width" feature down to the pixel dimensions that
+ * the compression ladder should treat as its own 100% reference point.
+ *
+ * The cap only ever shrinks - never enlarges - the image: a requested
+ * maxWidth at or above the source's own display width is a no-op (this is
+ * what makes "Maximum Width = Original" behave exactly like the plain
+ * compressor did before this feature existed). Height is derived from the
+ * source's own aspect ratio so portrait and landscape sources both scale
+ * proportionally, matching a plain `fit: 'inside'` resize.
+ */
+function resolveWidthCap(maxWidth, originalWidth, originalHeight) {
+  const needsWidthCap = Number.isFinite(maxWidth) && maxWidth > 0 && maxWidth < originalWidth;
+  if (!needsWidthCap) {
+    return { needsWidthCap: false, refWidth: originalWidth, refHeight: originalHeight };
+  }
+  const refWidth = Math.max(1, Math.round(maxWidth));
+  const refHeight = Math.max(1, Math.round(originalHeight * (refWidth / originalWidth)));
+  return { needsWidthCap: true, refWidth, refHeight };
+}
+
+/**
  * Compress a single image to fit under targetBytes while maximizing visual
  * quality:
  *
- *   1. Fast path: if the source is already at or under the target, return
- *      its original bytes untouched.
- *   2. Binary-search quality at full resolution.
- *   3. If even the quality floor overshoots the target, step down a
- *      resolution ladder (100% -> 40%) and re-run the quality search at
- *      each step, stopping at the first step that succeeds.
- *   4. If nothing on the ladder reaches the target, fall back to the
+ *   1. Fast path: if the source is already at or under the target *and* no
+ *      maximum-width cap forces a resize, return its original bytes
+ *      untouched.
+ *   2. If a maxWidth is given and smaller than the source, that becomes the
+ *      new 100% reference point for everything below (aspect ratio
+ *      preserved, never upscaled) - the resolution ladder and quality
+ *      search then run exactly as before, just against that smaller frame.
+ *   3. Binary-search quality at (capped) full resolution.
+ *   4. If even the quality floor overshoots the target, step down a
+ *      resolution ladder (100% -> 40%, relative to the capped size) and
+ *      re-run the quality search at each step, stopping at the first step
+ *      that succeeds.
+ *   5. If nothing on the ladder reaches the target, fall back to the
  *      smallest result found and report targetReached: false rather than
  *      crushing quality/resolution further to force a match.
  */
@@ -225,6 +252,7 @@ export async function compressImage({
   formatPref = 'auto',
   qualityFloor = QUALITY_FLOOR_DEFAULT,
   qualityCeiling = QUALITY_CEILING_DEFAULT,
+  maxWidth = null,
   onProgress,
   isCancelled = () => false,
 }) {
@@ -240,12 +268,18 @@ export async function compressImage({
   // force a format that preserves it if the source needs it.
   if (meta.hasAlpha && (format === 'jpeg')) format = 'webp';
 
+  // Maximum-width cap: resolved once, up front, so the whole ladder below
+  // works against the (possibly smaller) capped frame instead of the raw
+  // source dimensions.
+  const { needsWidthCap, refWidth, refHeight } = resolveWidthCap(maxWidth, originalWidth, originalHeight);
+
   let chosenResult = null;
   let chosenScale = 1;
   let targetReached = false;
 
-  // The source already meets the target, so do not alter its encoding or metadata.
-  if (originalSize <= targetBytes) {
+  // The source already meets the target and needs no forced resize, so do
+  // not alter its encoding or metadata at all.
+  if (!needsWidthCap && originalSize <= targetBytes) {
     const originalBuffer = await fs.readFile(filePath);
     onProgress?.(1, 1, 1);
     return {
@@ -262,17 +296,19 @@ export async function compressImage({
       targetReached: true,
       alreadyUnderTarget: true,
       unchanged: true,
+      maxWidthApplied: false,
+      requestedMaxWidth: null,
     };
   }
 
   const startStepIndex = await estimateStartingStepIndex({
-    filePath, format, quality: qualityCeiling, targetBytes, originalWidth, originalHeight,
+    filePath, format, quality: qualityCeiling, targetBytes, originalWidth: refWidth, originalHeight: refHeight,
   });
 
   for (let step = startStepIndex; step < RESOLUTION_LADDER.length; step += 1) {
     const scale = RESOLUTION_LADDER[step];
-    const width = Math.max(1, Math.round(originalWidth * scale));
-    const height = Math.max(1, Math.round(originalHeight * scale));
+    const width = Math.max(1, Math.round(refWidth * scale));
+    const height = Math.max(1, Math.round(refHeight * scale));
 
     // eslint-disable-next-line no-await-in-loop
     const { best, closest } = await searchQuality({
@@ -301,8 +337,8 @@ export async function compressImage({
     // it, but this squeezes out a smaller file if one is available.
     if (isCancelled()) throw new CancelledError();
     const floorScale = RESOLUTION_LADDER[RESOLUTION_LADDER.length - 1];
-    const width = Math.max(1, Math.round(originalWidth * floorScale));
-    const height = Math.max(1, Math.round(originalHeight * floorScale));
+    const width = Math.max(1, Math.round(refWidth * floorScale));
+    const height = Math.max(1, Math.round(refHeight * floorScale));
     const attempt = await encodeAttempt({
       filePath, format, quality: QUALITY_ABSOLUTE_FLOOR, width, height, originalWidth, originalHeight,
     });
@@ -326,5 +362,7 @@ export async function compressImage({
     targetReached,
     alreadyUnderTarget: false,
     unchanged: false,
+    maxWidthApplied: needsWidthCap,
+    requestedMaxWidth: needsWidthCap ? refWidth : null,
   };
 }
