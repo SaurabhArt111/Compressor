@@ -13,7 +13,7 @@ function envInt(name, fallback) {
 export const NODE_ENV = process.env.NODE_ENV || 'development';
 export const IS_PRODUCTION = NODE_ENV === 'production';
 
-export const PORT = envInt('PORT', 5000);
+export const PORT = envInt('PORT', 5055);
 export const HOST = process.env.HOST || '0.0.0.0';
 
 // In production behind a specific frontend origin, set CORS_ORIGIN to a

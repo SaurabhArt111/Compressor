@@ -13,7 +13,7 @@ is no third-party cloud dependency.
 
 ```bash
 npm install     # installs client + server (npm workspaces)
-npm run dev     # starts the backend (:5000) and the Vite dev server (:5173)
+npm run dev     # starts the backend (:5055) and the Vite dev server (:5173)
 ```
 
 Open **http://localhost:5173**.
@@ -23,10 +23,10 @@ Open **http://localhost:5173**.
 ```bash
 npm install
 npm run build   # builds the React app into client/dist
-npm start       # serves the API + the built frontend from :5000
+npm start       # serves the API + the built frontend from :5055
 ```
 
-Open **http://localhost:5000**. Requires Node.js **18.17+** (20+ recommended).
+Open **http://localhost:5055**. Requires Node.js **18.17+** (20+ recommended).
 
 ### Production (Docker)
 
@@ -34,7 +34,7 @@ Open **http://localhost:5000**. Requires Node.js **18.17+** (20+ recommended).
 docker compose up -d --build
 ```
 
-Open **http://localhost:5000**. Uploaded/compressed files and history persist
+Open **http://localhost:5055**. Uploaded/compressed files and history persist
 in named Docker volumes across restarts. See [Deployment](#deployment) below
 for env var tuning, a plain `docker build`/`docker run`, and a PM2 option.
 
@@ -281,7 +281,7 @@ environment variables (see `.env.example` for the full list with defaults):
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `PORT` / `HOST` | `5000` / `0.0.0.0` | Where the server listens |
+| `PORT` / `HOST` | `5055` / `0.0.0.0` | Where the server listens |
 | `CORS_ORIGIN` | `*` | Comma-separated allowlist, or `*` |
 | `UPLOAD_ROOT` / `HISTORY_FILE` | `server/uploads` / `server/data/history.json` | Storage locations |
 | `MAX_SERVER_CONCURRENCY` | 6 | Hard cap on parallel image/PDF jobs (exposed to the client read-only via `GET /api/config`) |
@@ -309,7 +309,7 @@ docker compose up -d --build
 
 This builds a multi-stage image (client build → lean production
 `node_modules` containing only the server's dependencies → non-root runtime
-user), exposes `5000`, and persists `server/uploads` and `server/data` in
+user), exposes `5055`, and persists `server/uploads` and `server/data` in
 named volumes so files and history survive container restarts/upgrades.
 Tune it via a `.env` file next to `docker-compose.yml` (copy `.env.example`)
 or plain environment variables — `HOST_PORT` picks the host-side port,
@@ -319,7 +319,7 @@ Plain `docker build`/`docker run`, if you'd rather not use Compose:
 
 ```bash
 docker build -t compressor .
-docker run -d -p 5000:5000 \
+docker run -d -p 5055:5055 \
   -v compressor-uploads:/app/server/uploads \
   -v compressor-data:/app/server/data \
   --name compressor compressor
@@ -332,7 +332,7 @@ The image includes a `HEALTHCHECK` that polls `/api/health`.
 ```bash
 npm install
 npm run build
-NODE_ENV=production PORT=5000 npm start
+NODE_ENV=production PORT=5055 npm start
 ```
 
 For process supervision, either works well:

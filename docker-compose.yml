@@ -4,10 +4,10 @@ services:
     image: compressor:latest
     restart: unless-stopped
     ports:
-      - "${HOST_PORT:-5000}:5000"
+      - "${HOST_PORT:-5055}:5055"
     environment:
       NODE_ENV: production
-      PORT: 5000
+      PORT: 5055
       HOST: 0.0.0.0
       # Comma-separated list of allowed origins if the app is served from a
       # different origin than it's accessed from (reverse proxy setups).
@@ -20,7 +20,7 @@ services:
       - compressor-uploads:/app/server/uploads
       - compressor-data:/app/server/data
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5055/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       start_period: 10s
