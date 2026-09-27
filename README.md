@@ -239,8 +239,7 @@ compressor/
 │       ├── utils/labels.js        # derives the Files-page project label
 │       ├── __test__/api.test.mjs                        # end-to-end HTTP API test
 │       └── services|utils/__test__/*.test.js             # engine/zip/label unit tests
-├── Dockerfile, docker-compose.yml, .dockerignore, .env.example
-├── package.json                  # npm workspaces root (install/dev/build/start)
+├── Dockerfile, docker-compose.yml, .dockerignore
 └── README.md
 ```
 
